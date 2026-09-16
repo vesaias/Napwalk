@@ -1,0 +1,100 @@
+/* The ?kit component gallery's own stylesheet — split out of index.css
+   after the final review (M1). The gallery's JS is gated on
+   import.meta.env.DEV and never reaches a production bundle; its CSS used
+   to, because a stylesheet has no such gate. Imported by KitGallery.tsx.
+
+   Everything the gallery renders is the kit itself, styled by index.css.
+   These are only the frame: a scrolling page instead of the app's pinned
+   100dvh box, and the stages the components are shown on. */
+
+/* --- kit gallery (?kit) -------------------------------------------------- */
+/* the gallery is a plain document-flow page: the app shell pins html /
+   body / #root to 100dvh, which would otherwise trap the scroll inside a
+   nested box and clip a full-page screenshot */
+html:has(.kit-gallery),
+body:has(.kit-gallery),
+#root:has(.kit-gallery) {
+  height: auto;
+  min-height: 100dvh;
+}
+
+.kit-gallery {
+  min-height: 100dvh;
+  background: var(--c-page);
+  color: var(--c-ink);
+  font-family: var(--font-ui);
+  padding: var(--sp-4) var(--sp-4) 120px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-5);
+}
+
+.kit-gallery h1 {
+  font-size: var(--fs-h1);
+  font-weight: var(--fw-bold);
+  margin: 0;
+}
+
+.kit-sec {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.kit-sec > h2 {
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-semibold);
+  color: var(--c-muted);
+  letter-spacing: var(--tr-label);
+  text-transform: uppercase;
+  margin: 0;
+}
+
+.kit-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.kit-surface {
+  background: var(--c-card);
+  border-radius: var(--r-card);
+  padding: var(--sp-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+/* a phone-sized frame, so the sheet and the tab bar have something to sit in */
+.kit-stage {
+  position: relative;
+  height: 360px;
+  border-radius: var(--r-card);
+  overflow: hidden;
+  background: var(--c-well);
+}
+
+.kit-stage--short {
+  height: 240px;
+}
+
+.kit-stage-map {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-start;
+  align-content: flex-start;
+  flex-wrap: wrap;
+  padding: var(--sp-3);
+  gap: var(--sp-2);
+}
+
+.kit-stage-tabbar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 22;
+}
+

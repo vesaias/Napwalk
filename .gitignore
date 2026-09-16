@@ -1,0 +1,38 @@
+data/*
+!data/README.md
+!data/LAYOUT.md
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+node_modules/
+web/dist/
+
+# Playwright e2e: its own install, and everything a run writes
+web/e2e/node_modules/
+web/e2e/test-results/
+web/e2e/report/
+web/public/basemap/
+web/public/basemap-assets/
+web/public/tiles/
+web/public/graph*.bin.gz*
+tools/
+
+# 14_circuits regenerates ~1,900 contact-sheet PNGs on every pipeline run
+# (58 MB). Tracking them roughly doubled the repo on each rebuild for a
+# derived artifact nobody diffs. Regenerate with pipeline/14_circuits.py;
+# reports/index.html is written alongside them.
+reports/circuits/
+
+# stray osmnx/Overpass cache — the pipeline uses data/work/<city>/osm_cache
+cache/
+
+# r2-watchdog: what a run writes (the log and the tripped-state file)
+scripts/r2-watchdog/*.log
+scripts/r2-watchdog/*.state.json
+
+# wrangler's local state and secrets; the design/session scratch
+web/.wrangler/
+web/.dev.vars
+.superpowers/
+

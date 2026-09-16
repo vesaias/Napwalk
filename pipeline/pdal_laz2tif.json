@@ -1,0 +1,7 @@
+[
+  {"type": "readers.las", "filename": "IN.laz"},
+  {"type": "writers.gdal", "filename": "OUT.tif",
+   "resolution": 1.0, "output_type": "max", "data_type": "float32",
+   "nodata": -9999, "gdaldriver": "GTiff",
+   "gdalopts": "COMPRESS=DEFLATE"}
+]

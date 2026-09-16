@@ -1,0 +1,8 @@
+osmnx==2.*
+networkx
+rasterio
+numpy
+shapely
+astral
+pillow
+brotli

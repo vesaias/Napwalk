@@ -1,0 +1,4371 @@
+:root {
+  --ink: #1f2430;
+  --paper: #faf8f3;
+  --shade: #3d4a6b;
+  --shade-soft: #3d4a6b22;
+  --sun: #f5b942;
+  --radius: 16px;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color: var(--ink);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100dvh;
+  overscroll-behavior: none;
+}
+
+.app {
+  position: relative;
+  height: 100dvh;
+  width: 100%;
+  overflow: hidden;
+}
+
+/* maplibre overrides the container's position to relative — size must be
+   explicit, inset alone silently collapses to the 300px default canvas */
+.map {
+  width: 100%;
+  height: 100%;
+}
+
+/* Where you are: an 8 px dot in an 11 px ring, inside a 22 px halo that
+   breathes on its own (Task 9, 2026-09-05). The halo is a pseudo-element,
+   so the dot never changes size with it. */
+.gps-dot {
+  position: relative;
+  /* SPEC §6.3 drew the dot at 8 / 11 / 22 px. Round 4 item 2 — "dot needs to
+     be 1.5× larger" (Viktor, 2026-09-16) — makes that 12 / 16.5 / 33, as
+     three tokens, because three numbers that have to keep their ratio are a
+     size and not a literal (docs/design/handoff/ERRATA.md, 33). */
+  width: var(--sz-gpsHalo);
+  height: var(--sz-gpsHalo);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.gps-dot::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: var(--c-gpsHalo);
+}
+
+.gps-dot::after {
+  content: "";
+  position: relative;
+  width: var(--sz-gpsDot);
+  height: var(--sz-gpsDot);
+  border-radius: 50%;
+  background: var(--c-route);
+  /* the white ring IS the border, so it is half the difference of the two */
+  border: calc((var(--sz-gpsRing) - var(--sz-gpsDot)) / 2) solid var(--c-card);
+  box-shadow: 0 1px 3px rgba(31, 33, 38, 0.35);
+}
+
+/* ...and in Navigate, with a heading, the dot is an arrow (2026-09-16,
+   DECISIONS): a chevron three dots tall in the route blue, the white ring
+   as its outline, the halo still pulsing under it. MapView sets `is-arrow`
+   and turns the marker; the glyph points north at rest. The box is four
+   dots with a 24-unit viewBox, so at the 12 px dot one unit is two pixels
+   and the 18-unit chevron is 36 px — twice the first cut's 18, the owner's
+   call after a real walk the same day — and the halo doubles with it, so
+   it still shows around the arrow as it did around the dot. */
+.gps-arrow {
+  display: none;
+  position: relative;
+  /* 4 dots wide was "2×"; the owner asked for 1.3× smaller (2026-09-16),
+     so 4 / 1.3 ≈ 3.08 dots — the chevron is the box × 0.75, about 28 px */
+  width: calc(var(--sz-gpsDot) * 3.08);
+  height: calc(var(--sz-gpsDot) * 3.08);
+  overflow: visible;
+  filter: drop-shadow(0 1px 3px rgba(31, 33, 38, 0.35));
+}
+
+.gps-arrow path {
+  fill: var(--c-route);
+  stroke: var(--c-card);
+  /* painted under the fill, so half of it shows: 4.5 units at the 2 px
+     unit is a 4.5 px ring, the dot's 2.25 px ring at the arrow's scale */
+  stroke-width: 4.5;
+  stroke-linejoin: round;
+  paint-order: stroke;
+}
+
+.gps-dot.is-arrow {
+  width: calc(var(--sz-gpsHalo) * 2);
+  height: calc(var(--sz-gpsHalo) * 2);
+}
+
+.gps-dot.is-arrow::after {
+  display: none;
+}
+
+.gps-dot.is-arrow .gps-arrow {
+  display: block;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .gps-dot::before {
+    animation: gps-pulse 2s ease-out infinite;
+  }
+  @keyframes gps-pulse {
+    0% {
+      transform: scale(0.55);
+      opacity: 1;
+    }
+    70% {
+      transform: scale(1);
+      opacity: 0.3;
+    }
+    100% {
+      transform: scale(0.55);
+      opacity: 1;
+    }
+  }
+}
+
+/* ---- redesign kit (2026-09-05) ---- */
+/* Everything below is the Task 10 component kit and uses only tokens.css.
+   Four places where a token is close but not exact, all deliberate:
+   - the sheet handle and the modal scrim are ink at 20 % / 40 % in the
+     mockups; --c-hair2 (15 %) covers the handle and flips correctly in
+     dark, the scrim's 40 % ink has no token and is written out;
+   - the segment's raised card uses --sh-chip (0 1px 3px / 20 %) where the
+     mockup has 0 1px 2px / 15 %;
+   - the delta note's 12.5 px rounds down to --fs-micro.
+   Lengths off the --sp scale (6, 10, 14, 18, 22, 26, 30, 36, 90 px) are
+   written literally — the scale has no token for them. */
+
+.kit-body {
+  font-family: var(--font-ui);
+  color: var(--c-ink);
+  background: var(--c-page);
+}
+
+/* The bottom tab bar's TOTAL height - the one figure every box that has to
+   clear it reads. --sz-tabbar (56) is the bar in a browser tab, where its
+   bottom padding is the 10 px floor of SPEC section 7; swap that floor for
+   the device's real inset and add the 1 px hairline on top. 57 px in a
+   browser tab, taller on a phone with a home indicator.
+   Derived from the token rather than from the number it happens to be, so
+   changing --sz-tabbar cannot leave the boxes that clear the bar behind.
+   Not a design token itself: it is the sum of tokens this layout makes, so
+   it lives here and not in tokens.css. */
+:root {
+  --tabbar-h: calc(
+    var(--sz-tabbar) - 10px + 1px + max(env(safe-area-inset-bottom, 0px), 10px)
+  );
+  /* ...and the height it is worth RIGHT NOW. Since CR-01 edit 5 the bar is
+     mounted on every phone screen and slides out of the ones that do not
+     want it, so "how tall is the bar" and "how much room does it take" are
+     two different questions. Every box that has to clear the bar asks this
+     one; only the bar's own geometry asks --tabbar-h. */
+  --tabbar-now: var(--tabbar-h);
+}
+
+/* --- the panel rhythm (2026-09-16) --------------------------------------- */
+/* One vertical scale for every surface the same components stack on — the
+   desktop panel, the tablet card, the phone's sheets:
+
+     14  between blocks
+     24  before a section caption
+     12  inside every card, with the card's own border drawn INSIDE it, so
+         the text of a 2 px recommended card and a 1.5 px alternative start
+         at the same x
+
+   The panel measured five different gaps before this (14, 12, 10, 27 and
+   the hour strip's 23) with no rule behind any of them. 24 and 12 are
+   --sp-6 and --sp-3; 14 is the only step off the --sp scale — it is the
+   board's own panel gap (W-routes), and it lives here as a name rather than
+   as a literal in four rules (docs/design/handoff/ERRATA.md, erratum 32).
+   Like --tabbar-h above, these are what this layout MAKES of the tokens,
+   not tokens themselves. */
+:root {
+  --web-block-gap: 14px;
+  --web-caption-gap: var(--sp-6);
+  --card-pad: var(--sp-3);
+}
+
+.shell[data-tabbar="false"] {
+  --tabbar-now: 0px;
+}
+
+/* --- Button ------------------------------------------------------------- */
+/* 46 h, radius 23, 16 bold (SPEC section 4). --fs-row IS the 16 px token;
+   the secondary takes the 17 px --fs-button the spec gives it. */
+.kit-btn {
+  font-family: var(--font-ui);
+  font-size: var(--fs-row);
+  font-weight: var(--fw-bold);
+  line-height: var(--lh-ui);
+  height: var(--sz-button);
+  flex: 1 1 0;
+  width: 100%;
+  padding: 0 var(--sp-4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  border: 0;
+  border-radius: var(--r-pill);
+  background: var(--c-accent);
+  color: var(--c-onAccent);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.kit-btn--secondary {
+  background: transparent;
+  color: var(--c-ink);
+  border: 1.5px solid var(--c-hair2);
+  font-size: var(--fs-button);
+  font-weight: var(--fw-semibold);
+}
+
+.kit-btn--ink {
+  background: var(--c-banner);
+  color: var(--c-onBanner);
+}
+
+/* the End button on the navigation bar: shorter, outlined, red */
+.kit-btn--danger {
+  height: var(--sz-target);
+  border-radius: 22px;
+  border: 1.5px solid var(--c-end);
+  background: transparent;
+  color: var(--c-end);
+  font-size: var(--fs-body);
+  padding: 0 18px;
+  flex: 0 0 auto;
+  width: auto;
+}
+
+/* the two buttons inside the no-route card */
+.kit-btn--small,
+.kit-btn--smallSecondary {
+  height: var(--sz-buttonSmall);
+  border-radius: var(--r-chip);
+  font-size: var(--fs-chip);
+  padding: 0 var(--sp-4);
+  flex: 0 0 auto;
+  width: auto;
+}
+
+.kit-btn--smallSecondary {
+  background: transparent;
+  color: var(--c-ink);
+  border: 1.5px solid var(--c-hair2);
+}
+
+.kit-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* the sheet's action row: one wide primary next to a narrow secondary */
+.kit-actions {
+  display: flex;
+  gap: var(--sp-2);
+}
+
+.kit-actions--wide > :first-child {
+  flex: 2 1 0;
+}
+
+/* the peek snap's row: Start, and the drag-up button beside it (SPEC §3b,
+   board HB-routes — 1.6 to 1) */
+.kit-actions--peek > :first-child {
+  flex: 1.6 1 0;
+}
+
+.kit-actions--peek > .kit-btn--secondary {
+  font-size: var(--fs-body);
+}
+
+/* --- Chip --------------------------------------------------------------- */
+.kit-chip {
+  font-family: var(--font-ui);
+  font-size: var(--fs-chip);
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-ui);
+  height: var(--sz-chip);
+  padding: 0 14px;
+  border: 0;
+  border-radius: var(--r-chip);
+  background: var(--c-card);
+  color: var(--c-ink);
+  /* SPEC §4 gives the Chip shadow `chip` (0 1px 3px / 20 %), and the boards
+     draw that on the map chips and on Wander's alike. Slice 2 shipped
+     --sh-float here — twice the blur and twice the offset — and slice 9's
+     paint pass corrects it (slice-2 report, deviation 8). */
+  box-shadow: var(--sh-chip);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.kit-chip--accent {
+  color: var(--c-accent);
+}
+
+.kit-chip--dark {
+  background: var(--c-banner);
+  color: var(--c-onBanner);
+}
+
+/* A chip that is a CHOICE, not a door: the picked one wears a FILL. Colour
+   alone (accent text on the card, against ink on the card) is a 1.4.1
+   failure and was invisible in the dark theme (UX sweep U15), so U15 gave
+   it --c-accentSoft behind --c-accent — a soft green wash. CR-03 Q6 rules
+   for the harder pair the board has drawn all along: INK behind white, the
+   `--c-banner` / `--c-onBanner` couple the walk banner, the ink layers
+   button and the dark chips already wear, and the one contrast row that
+   holds at 4.5:1 in both themes. A soft wash reads as "available"; a fill
+   reads as "this one". After --accent so it wins the text colour, before
+   --dark and --icon, which no pressed chip uses. */
+.kit-chip--pressed {
+  background: var(--c-banner);
+  color: var(--c-onBanner);
+}
+
+.kit-chip--sun {
+  padding-left: 10px;
+}
+
+/* a chip whose face is an icon (the access chip): its name is the
+   aria-label, its width is the glyph and the ▾ */
+.kit-chip--icon {
+  padding: 0 8px;
+  gap: 2px;
+}
+
+.kit-chip--icon > svg {
+  flex: none;
+}
+
+.kit-chip-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--c-sun);
+  flex: none;
+}
+
+.kit-chip:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* A chip's edge is its shadow, and a shadow is a light-theme device:
+   --sh-chip is black at 20 %, which over a dark card is nothing at all. The
+   chips that float over the map still read there (card on page), but the
+   four type chips in the report sheet sit ON a card, and in the dark theme
+   they lost their shape completely and read as four runs of bare text
+   (slice 9's dark pass). A hairline gives the edge back. Dark only: in the
+   light theme the shadow already draws it, and a ring on top would make
+   every chip in the app heavier than the boards draw it. */
+:root[data-theme="dark"] .kit-chip {
+  box-shadow: var(--sh-chip), 0 0 0 1px var(--c-hair2);
+}
+
+/* --- Tag ---------------------------------------------------------------- */
+.kit-tag {
+  font-size: var(--fs-micro);
+  font-weight: var(--fw-bold);
+  line-height: var(--lh-body);
+  border-radius: var(--r-tag);
+  padding: 2px 6px;
+  align-self: flex-start;
+  white-space: nowrap;
+}
+
+.kit-tag--acc {
+  color: var(--c-accent);
+  background: var(--c-accentSoft);
+}
+
+.kit-tag--quiet {
+  color: var(--c-quiet);
+  background: var(--c-quietSoft);
+}
+
+.kit-tag--well {
+  color: var(--c-ink);
+  background: var(--c-well);
+}
+
+/* --- Sheet -------------------------------------------------------------- */
+/* Over the tab bar (z 22): Wander is the first screen that has one under an
+   open modal, and phone-dur.html dims the whole phone, tab bar included.
+   Before Task 13 found it, the bar was drawn over the sheet and Apply sat
+   under it, unreachable. Non-modal sheets stay at 21 and pad past it. */
+.kit-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 23;
+  /* ink at 40 % — no token carries this alpha */
+  background: rgba(31, 33, 38, 0.4);
+  transition: opacity var(--m-sheet);
+}
+
+.kit-scrim[data-open="false"] {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.kit-sheet {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 21;
+  font-family: var(--font-ui);
+  color: var(--c-ink);
+  background: var(--c-card);
+  border-radius: var(--r-sheet) var(--r-sheet) 0 0;
+  box-shadow: var(--sh-sheet);
+  /* 10 16 22 in a browser tab (SPEC section 4), over the home indicator's
+     own inset the way the tab bar and the Navigate bar already do it (QA
+     F4-04). index.html sets viewport-fit=cover, so env() is live here. */
+  padding: 10px var(--sp-4) calc(22px + env(safe-area-inset-bottom, 0px));
+  display: flex;
+  flex-direction: column;
+  /* the panel rhythm, which is the sheet's too: the same cards stack here */
+  gap: var(--web-block-gap);
+  transition: transform var(--m-sheet), visibility var(--m-sheet);
+}
+
+/* the modal sheets (preference, leave, duration, report) breathe one step
+   wider, and sit above the scrim that dims everything else */
+.kit-sheet--modal {
+  z-index: 24;
+  /* ...and they have a ceiling even at the `default` snap. A modal sheet
+     grows with its content and cannot be dragged (peek = dismiss), so the
+     report sheet — chips, a switch and a 120 px textarea — could push its
+     own Send button off the bottom the moment the soft keyboard came up,
+     with no gesture that brings it back (slice 7 review, finding 5). It
+     stops one top-inset-plus-12 short of the viewport and scrolls inside
+     instead. `tall` overrides this with its own, taller ceiling. */
+  max-height: calc(100dvh - env(safe-area-inset-top, 0px) - var(--sp-3));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* the sheet that shares the phone with the tab bar clears it instead: the
+   bar's whole height plus the same 22 px of air (--tabbar-h already carries
+   the bottom inset, so it is not counted twice). */
+.kit-sheet--tabbar {
+  padding-bottom: calc(var(--tabbar-now) + 22px);
+}
+
+/* --- the three snaps (SPEC section 3b, CR-01 edit 2) --------------------- */
+/* `default` is the sheet as it has always been drawn: content height, bottom
+   anchored. `peek` is content-sized too, up to the 168 px ceiling SPEC
+   section 3b sets for it — the handle, one compact recommended card and one
+   button row, which come out at 150 — and it clips whatever a sheet with no
+   `peek` of its own would have shown below that. `tall` stops under the
+   chrome above it (--sheet-top, set by the component) and scrolls its own
+   body.
+
+   Peek was a FIXED 88 until the live phone review: a sheet that said only
+   "21 min" still cost a third of the map, and the reader had to drag to
+   learn anything. --sheet-peek is the ceiling the budget guard lowers when
+   a short viewport cannot afford the whole 168 (ui/sheetBudget.ts). */
+.kit-sheet[data-snap="peek"] {
+  height: auto;
+  max-height: calc(var(--sheet-peek, 168px) + env(safe-area-inset-bottom, 0px));
+  padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+  gap: var(--sp-2);
+  overflow: hidden;
+}
+
+/* …and a sheet that shares the phone with the tab bar peeks ABOVE it. Its
+   height is height of sheet: padding the bar back in would leave a third of
+   a card showing, which is what the first build did.
+
+   The `bottom` is TRANSITIONED, on the same 200 ms curve the bar itself
+   slides on. --tabbar-now is an unregistered custom property, so it cannot
+   be transitioned itself: it steps 0 → 57 in one frame while the bar takes
+   its time coming in under the sheet, which left a 57 px band of bare map
+   under a resting sheet for about 150 ms on every trip down the ladder
+   (CR-C review, C4). `transform` and `visibility` keep --m-sheet: the FLIP
+   that walks the ladder clears its inline transition and hands the property
+   back to this rule, and that animation is the sheet's, not the bar's. */
+.kit-sheet--tabbar[data-snap="peek"] {
+  bottom: var(--tabbar-now);
+  max-height: var(--sheet-peek, 168px);
+  padding-bottom: 10px;
+  transition:
+    transform var(--m-sheet),
+    visibility var(--m-sheet),
+    bottom var(--m-tabbar);
+}
+
+/* `tall` is a ceiling, not a height: the sheet takes as much room as its
+   content asks for, up to the viewport minus the chrome above it, and
+   scrolls inside once it wants more. A fixed height would be honest to the
+   letter of "viewport - header" and wrong on screen — the routes sheet is
+   278 px of card and would stand in 605 px of empty white. */
+.kit-sheet[data-snap="tall"] {
+  max-height: calc(100dvh - var(--sheet-top, 139px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* …and at that snap the handle stays put while the body scrolls under it
+   (SPEC section 4: "the sheet BODY scrolls"). The sheet itself is the scroll
+   container, so the handle is made sticky rather than moved into a second
+   box — `top: -10px` is exactly its own negative top margin, which is what
+   makes it rest where it already sits at scrollTop 0 and pin from there.
+   The card colour behind it is what the content scrolls under (fix round 1,
+   F1). */
+.kit-sheet[data-snap="tall"] .kit-sheet-handle {
+  position: sticky;
+  top: -10px;
+  z-index: 1;
+  background: var(--c-card);
+}
+
+/* mid-drag the sheet follows the finger, and a transition would fight it.
+   Between snaps it is the opposite: the component measures the edge the
+   sheet came from and hands the difference to `transform` (Sheet.tsx), so
+   the ladder is walked over --m-sheet by the transition above rather than
+   jumped — and under `prefers-reduced-motion` that same transition is off,
+   so the snap is instant (fix round 1, F2). */
+.kit-sheet[data-dragging] {
+  transition: none;
+}
+
+.kit-sheet[data-open="false"] {
+  transform: translateY(100%);
+  visibility: hidden;
+}
+
+/* the modal panel takes focus on open (WAI-ARIA dialog pattern); it is not
+   itself actionable, so it must not draw a ring for it */
+.kit-sheet:focus {
+  outline: none;
+}
+
+/* The handle. 36×4 to look at, but the thing you grab is the whole width of
+   the sheet and 28 px tall (SPEC section 4) — a bar four pixels high is not
+   a target. `touch-action: none` is on this button and nowhere else: it is
+   the one element whose vertical drag belongs to us rather than to the
+   browser's scroller. The negative margins put the 28 px back over the
+   sheet's own 10 px top padding, so nothing below it moves. */
+.kit-sheet-handle {
+  height: 28px;
+  margin: -10px calc(var(--sp-4) * -1) -14px;
+  border: 0;
+  padding: 0;
+  background: none;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  touch-action: none;
+  cursor: grab;
+}
+
+.kit-sheet-handle:active {
+  cursor: grabbing;
+}
+
+.kit-sheet-grip {
+  width: 36px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--c-hair2);
+  display: block;
+}
+
+/* --- ListRow ------------------------------------------------------------ */
+.kit-row {
+  font-family: var(--font-ui);
+  font-size: var(--fs-row);
+  color: var(--c-ink);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: var(--sz-row);
+  padding: var(--sp-2) 0;
+  border: 0;
+  border-top: 1px solid var(--c-hair);
+  background: none;
+  width: 100%;
+  text-align: left;
+}
+
+/* the tappable part of a row. It is a sibling of .kit-row-right, never its
+   parent: a settings row puts a Toggle in `right`, and a button inside a
+   button is invalid HTML. */
+.kit-row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+}
+
+button.kit-row-main {
+  cursor: pointer;
+}
+
+/* a settings line: no second line, so the row sits one step shorter */
+.kit-row--compact {
+  min-height: 52px;
+  gap: var(--sp-3);
+  justify-content: space-between;
+}
+
+.kit-row-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: var(--fw-bold);
+  flex: none;
+}
+
+.kit-row-avatar--acc {
+  background: var(--c-accentSoft);
+  color: var(--c-accent);
+}
+
+.kit-row-avatar--well {
+  background: var(--c-well);
+  color: var(--c-ink);
+}
+
+.kit-row-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.kit-row-title {
+  font-size: var(--fs-row);
+  font-weight: var(--fw-semibold);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.kit-row-meta {
+  font-size: var(--fs-chip);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.kit-row-meta--muted {
+  color: var(--c-muted);
+}
+
+/* the wrapping caption under a toggle's title (ListRow `note`) */
+.kit-row-note {
+  font-size: var(--fs-caption);
+  line-height: var(--lh-body);
+  color: var(--c-muted);
+  white-space: normal;
+  padding-top: 2px;
+}
+
+.kit-row-meta--accent {
+  color: var(--c-accent);
+}
+
+.kit-row-meta--warn {
+  color: var(--c-warn);
+}
+
+.kit-row-right {
+  font-size: var(--fs-chip);
+  color: var(--c-muted);
+  white-space: nowrap;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+/* a settings row's OWN value, inside the button rather than beside it, so
+   the value and its ▾ are part of the tap target and of the accessible name
+   (review B5). It looks exactly like .kit-row-right did. */
+.kit-row-value {
+  font-size: var(--fs-body);
+  color: var(--c-muted);
+  white-space: nowrap;
+  flex: none;
+}
+
+.kit-row--compact .kit-row-right {
+  font-size: var(--fs-body);
+}
+
+/* --- Toggle ------------------------------------------------------------- */
+.kit-toggle {
+  width: 44px;
+  height: 26px;
+  border: 0;
+  border-radius: 13px;
+  padding: 0;
+  position: relative;
+  flex: none;
+  background: var(--c-hair2);
+  cursor: pointer;
+  transition: background var(--m-barGrow);
+}
+
+.kit-toggle[data-on="true"] {
+  background: var(--c-accent);
+}
+
+.kit-toggle-knob {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--c-card);
+  transition: left var(--m-barGrow);
+}
+
+.kit-toggle[data-on="true"] .kit-toggle-knob {
+  left: 21px;
+}
+
+/* --- Segment ------------------------------------------------------------ */
+.kit-segment {
+  display: flex;
+  gap: var(--sp-1);
+  background: var(--c-well);
+  border-radius: var(--r-segment);
+  padding: var(--sp-1);
+}
+
+.kit-segment-item {
+  flex: 1;
+  min-width: 0;
+  height: var(--sz-chip);
+  border: 0;
+  border-radius: var(--r-segmentInner);
+  background: transparent;
+  box-shadow: none;
+  font-family: var(--font-ui);
+  font-size: var(--fs-chip);
+  font-weight: var(--fw-semibold);
+  color: var(--c-ink);
+  cursor: pointer;
+}
+
+.kit-segment-item[aria-checked="true"] {
+  background: var(--c-card);
+  box-shadow: var(--sh-chip);
+}
+
+/* The access sheet's segment (SPEC §3c, board CR-03 Q0): 44 h items with a
+   20 px glyph beside the word, and the unpicked ones muted so the raised
+   card is not the only thing marking the choice. */
+.access-segment .kit-segment-item {
+  height: var(--sz-target);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: var(--c-muted);
+}
+
+.access-segment .kit-segment-item[aria-checked="true"] {
+  color: var(--c-ink);
+}
+
+/* --- TabBar ------------------------------------------------------------- */
+/* 56 px in a browser tab (SPEC section 4: padding 6 8 8, and section 7's
+   max(env(safe-area-inset-bottom), 10px) for the bottom). min-height is what
+   makes it exactly 56 with box-sizing: border-box; a home indicator grows
+   the padding past it. 6 and 11 px are the board's own lengths - the scale
+   has no step for either. */
+.kit-tabbar {
+  background: var(--c-card);
+  border-top: 1px solid var(--c-hair);
+  min-height: var(--sz-tabbar);
+  padding: 6px var(--sp-2) max(env(safe-area-inset-bottom, 0px), 10px);
+  display: flex;
+}
+
+.kit-tab {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: var(--font-ui);
+  font-size: var(--fs-nano);
+  line-height: var(--lh-body);
+  font-weight: var(--fw-semibold);
+  color: var(--c-muted);
+  cursor: pointer;
+}
+
+.kit-tab[data-active="true"] {
+  color: var(--c-accent);
+}
+
+/* --- SearchBar ---------------------------------------------------------- */
+/* the one pill the compact pass leaves alone: 52 h, and a radius that is
+   half of it - --r-pill is 23 now, which is the 46 px button's. */
+.kit-search {
+  height: var(--sz-searchBar);
+  background: var(--c-card);
+  border-radius: calc(var(--sz-searchBar) / 2);
+  box-shadow: var(--sh-float);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: 0 18px;
+  font-family: var(--font-ui);
+}
+
+/* Read-only, the pill IS the button: 358 x 52 of target where there used
+   to be a 290 x 44 one inside it, with the magnifier outside the hit area
+   (UX sweep U2). Only the button reset is new — every measurement above is
+   the pill's own. */
+.kit-search--button {
+  width: 100%;
+  border: 0;
+  cursor: pointer;
+  text-align: left;
+  color: var(--c-ink);
+}
+
+.kit-search-glyph {
+  font-family: var(--font-ui);
+  line-height: var(--lh-tight);
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  flex: none;
+}
+
+.kit-search-glyph--back {
+  font-size: var(--fs-h3);
+  color: var(--c-ink);
+}
+
+.kit-search-glyph--clear {
+  font-size: var(--fs-body);
+  color: var(--c-muted);
+  /* it is rendered BEFORE the field (kit/SearchBar.tsx, UX sweep U9) and
+     drawn after it: the bar's glyphs keep the head of the tab order, the
+     reader's eye keeps the layout SPEC §4 draws */
+  order: 1;
+}
+
+/* The ✕ every modal sheet wears (kit/SheetHead.tsx). It shares the search
+   bar's glyph base — the reset, and the 44 px `::before` slop at the foot of
+   this file — and nothing else: at `--fs-body` it was the smallest mark on
+   the phone, on a sheet whose own handle is 36 px wide, and it read as
+   decoration rather than as the way out (Viktor, round 3, item 11). 23 px is
+   1.5× of that 15, and the same token now sizes the route header's ✕ and the
+   Wander pill's, so the three exits in the app are one size. */
+.kit-sheet-close {
+  font-size: var(--sz-closeGlyph);
+  color: var(--c-muted);
+}
+
+.kit-search-icon {
+  display: flex;
+  flex: none;
+  color: var(--c-muted);
+}
+
+.kit-search-input,
+.kit-search-value {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: none;
+  font-family: var(--font-ui);
+  font-size: var(--fs-button);
+  font-weight: var(--fw-semibold);
+  color: var(--c-ink);
+}
+
+.kit-search-input::placeholder {
+  color: var(--c-muted);
+  font-weight: var(--fw-regular);
+}
+
+/* An <input> cannot carry the ::before hit-slop the rest of the kit uses,
+   so it takes the pill's full height instead: the box grows from the 24px
+   text line to the bar's 52px, the text stays vertically centred, and a tap
+   in the pill's padding while typing lands in the field (QA F4-03). */
+.kit-search-input {
+  align-self: stretch;
+  min-height: var(--sz-target);
+}
+
+.kit-search-value {
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.kit-search-value--empty {
+  color: var(--c-muted);
+  font-weight: var(--fw-regular);
+}
+
+/* --- Bars / ShadeStrip -------------------------------------------------- */
+/* One row, both meters (SPEC §4 / board HB-routes): 56 x 6 track, then its
+   percentage, twice. Stacking the label under the track cost the card a
+   whole line and the sheet the map's height. */
+.kit-bars {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-caption);
+  color: var(--c-muted);
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.kit-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* 40 px tracks, and each one followed by its figure in bold ink and its
+   word in muted — "**76 %** shade" (CR-03 Q7, board `c-q7`). CR-01 had 44 px
+   tracks and a bare percentage; the words came back because two coloured
+   bars and two numbers are not readable without them, and the 4 px the
+   tracks give up plus the row's own 6 px gaps are what pays for them.
+   The pair never shrinks and never ellipsises: what gives way first is the
+   via or loop name beside it (`.kit-card-row2 > .kit-card-via`). */
+.kit-bars--compact {
+  flex: none;
+  gap: 6px;
+  font-size: 12.5px;
+}
+
+.kit-bars--compact .kit-bar-track {
+  width: 40px;
+}
+
+.kit-bars--compact .kit-bar {
+  gap: 6px;
+}
+
+.kit-bars--compact .kit-bar > span {
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.kit-bar-val {
+  font-weight: var(--fw-bold);
+  color: var(--c-ink);
+}
+
+.kit-bar-track {
+  width: 56px;
+  flex: none;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--c-hair);
+  overflow: hidden;
+}
+
+.kit-bar > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.kit-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width var(--m-barGrow);
+}
+
+.kit-bar-fill--shade {
+  background: var(--c-accent);
+}
+
+/* The BAR's blue, not the tag's (CR-04 ruling 3, ERRATA 20). The two uses
+   of `quiet` have different gates — 4.5:1 for the "Quieter" tag's 12 px text
+   on --c-quietSoft, 3:1 for this fill against its own track — and board
+   c-q7's #6c7fa8 passes the second and fails the first. So the design system
+   publishes both: --c-quietBar for every quiet meter (the full card's and
+   the peek card's compact pair alike), --c-quiet for the tag's text, which
+   is unchanged at #516590. In the dark theme they are the same value.
+   scripts/contrast.mjs measures the bar pair at 3.43:1 light, 4.42:1 dark. */
+.kit-bar-fill--quiet {
+  background: var(--c-quietBar);
+}
+
+.kit-strip {
+  height: 10px;
+  border-radius: 5px;
+  overflow: hidden;
+  display: flex;
+  background: var(--c-hair);
+}
+
+/* the navigation bar's own ribbon (board HB-navigate): 6 px, and it shares
+   its row with the label, so it needs a floor to shrink to */
+.kit-strip--thin {
+  height: 6px;
+  flex: 1 1 auto;
+  min-width: 64px;
+}
+
+.kit-strip-seg--shade {
+  background: var(--c-accent);
+}
+
+.kit-strip-seg--sun {
+  background: var(--c-sun);
+}
+
+/* --- HourBars ----------------------------------------------------------- */
+/* The columns share the row, however many there are: gap 4, never under
+   6 px wide, the fill as wide as its column, and bars 48 high (SPEC §4).
+   The 48 is the TRACK: the "68 %" badge over the current bar and the hour
+   label under every bar are their own rows, outside it — the board draws
+   all three inside 48 and overflows its own box doing it.
+
+   Until 2026-09-16 fourteen bars or more switched the whole strip to 6 px
+   sticks with a label every third hour, so London's 14-bar day and
+   Frankfurt's 13-bar day were visibly two different charts. Now only the
+   LABELS thin out, by measured column width (kit/hourLabels.ts
+   `labelEvery`), and there is one chart. */
+.kit-hours {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--sp-1);
+}
+
+.kit-hour {
+  flex: 1 1 0;
+  /* the old dense stick, as a floor: narrower than this is not a bar */
+  min-width: 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--sp-1);
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: var(--font-ui);
+  cursor: pointer;
+}
+
+/* a fixed row, so the current hour's badge never shortens its own bar */
+.kit-hour-pct {
+  min-height: 15px;
+  font-size: var(--fs-micro);
+  font-weight: var(--fw-bold);
+  line-height: var(--lh-ui);
+  color: var(--c-accent);
+}
+
+.kit-hour-track {
+  flex: none;
+  height: 48px;
+  width: 100%;
+  display: flex;
+  align-items: flex-end;
+}
+
+.kit-hour-fill {
+  width: 100%;
+  border-radius: var(--r-bar);
+  background: var(--c-accentSoft);
+  transition: height var(--m-barGrow);
+}
+
+.kit-hour-fill--current {
+  background: var(--c-accent);
+}
+
+.kit-hour-fill--best {
+  background: var(--c-accent);
+  opacity: 0.6;
+}
+
+.kit-hour-label {
+  min-height: 15px;
+  font-size: var(--fs-micro);
+  font-weight: var(--fw-regular);
+  color: var(--c-muted);
+}
+
+.kit-hour[data-current="true"] .kit-hour-label {
+  color: var(--c-ink);
+  font-weight: var(--fw-bold);
+}
+
+/* --- RouteCard / DeltaCard ---------------------------------------------- */
+.kit-card {
+  border: 2px solid var(--c-accent);
+  border-radius: var(--r-card);
+  /* 12 from the card's edge to its text, the 2 px border counted inside it
+     — which is what puts this card's text on the same x as an alternative's
+     (--card-pad, the panel rhythm). */
+  padding: calc(var(--card-pad) - 2px);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--c-card);
+  color: var(--c-ink);
+  font-family: var(--font-ui);
+  width: 100%;
+  text-align: left;
+}
+
+button.kit-card {
+  cursor: pointer;
+}
+
+.kit-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  white-space: nowrap;
+}
+
+.kit-card-min {
+  font-size: var(--fs-num);
+  font-weight: var(--fw-bold);
+  line-height: var(--lh-tight);
+  letter-spacing: var(--tr-num);
+  font-variant-numeric: tabular-nums;
+}
+
+.kit-card-meta {
+  font-size: var(--fs-chip);
+  color: var(--c-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.kit-card-meta--warn {
+  color: var(--c-warn);
+}
+
+.kit-card-tags {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.kit-card-name {
+  font-size: var(--fs-body);
+  font-weight: var(--fw-semibold);
+}
+
+/* --- the compact card (CR-01 edit 3, board HB-routes) -------------------- */
+/* The peek snap's recommended card: two rows instead of four, and both of
+   them a FIXED height, because the peek budget (ui/sheetBudget.ts) is
+   measured in whole pixels — 2 + 8 + 26 + 4 + 16 + 8 + 2 = 66. The full
+   variant above is untouched: it is what the default snap and every web
+   frame still draw. */
+.kit-card--compact {
+  padding: var(--sp-2) var(--sp-3);
+  gap: var(--sp-1);
+}
+
+.kit-card-row1 {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+  height: 26px;
+  white-space: nowrap;
+}
+
+/* the minutes lead at 24 here rather than the full card's 26 — the tag and
+   the arrival share the line with them */
+.kit-card--compact .kit-card-min {
+  font-size: var(--fs-h2);
+}
+
+/* "1.7 km · arrive 14:21", pushed to the right end of the line */
+.kit-card-row1 > .kit-card-meta {
+  margin-left: auto;
+  font-size: var(--fs-caption);
+}
+
+.kit-card-row2 {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  height: 16px;
+  white-space: nowrap;
+  font-size: var(--fs-caption);
+  color: var(--c-muted);
+}
+
+/* the meters hold the right end of row 2 whether or not the walk has a
+   name to put at the left one (an A→B leg has none: no street names in the
+   artifact) */
+.kit-card-row2 > .kit-bars {
+  margin-left: auto;
+}
+
+/* …and the name is the half that gives way when the row runs out of width
+   (CR-03 Q7): it takes what is left after the meters and ellipsises inside
+   it. The meters' own words never truncate — they are the measurement. */
+.kit-card-row2 > .kit-card-via {
+  flex: 1 1 auto;
+}
+
+/* "via Hartmann-Ibach-Str.", or the loop's name — and the §1.1 warning in
+   its place when there is one */
+.kit-card-via {
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-semibold);
+  color: var(--c-ink);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.kit-card-via--warn {
+  color: var(--c-warn);
+  font-weight: var(--fw-regular);
+}
+
+.kit-delta {
+  flex: 1 1 0;
+  min-width: 0;
+  border: 1.5px solid var(--c-hair2);
+  border-radius: var(--r-card);
+  /* ...and the same 12, over a 1.5 px border */
+  padding: calc(var(--card-pad) - 1.5px);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  background: var(--c-card);
+  color: var(--c-ink);
+  font-family: var(--font-ui);
+  text-align: left;
+  cursor: pointer;
+}
+
+.kit-delta-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.kit-delta-min {
+  font-size: var(--fs-numSmall);
+  font-weight: var(--fw-bold);
+  line-height: var(--lh-tight);
+  font-variant-numeric: tabular-nums;
+}
+
+.kit-delta-diff {
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-bold);
+}
+
+.kit-delta-diff--good {
+  color: var(--c-accent);
+}
+
+.kit-delta-diff--bad {
+  color: var(--c-warn);
+}
+
+/* line 2: the tag and, beside it, what the walk costs (SPEC §4). */
+.kit-delta-foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.kit-delta-foot .kit-tag {
+  flex: none;
+}
+
+.kit-delta-note {
+  min-width: 0;
+  font-size: var(--fs-micro);
+  color: var(--c-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.kit-delta-note--warn {
+  color: var(--c-warn);
+}
+
+/* --- Toast -------------------------------------------------------------- */
+.kit-toast {
+  position: fixed;
+  z-index: 30;
+  /* it is a status message, never a target. Wander's sheet is the first one
+     whose action row reaches up to the toast's line, and a 3.2 s pill must
+     not swallow the tap on Start underneath it (Task 13). */
+  pointer-events: none;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 90px);
+  background: var(--c-banner);
+  color: var(--c-onBanner);
+  font-family: var(--font-ui);
+  font-size: var(--fs-chip);
+  padding: 10px 18px;
+  /* SPEC section 4 gives the toast radius 12 - --r-segment is that token */
+  border-radius: var(--r-segment);
+  box-shadow: var(--sh-float);
+}
+
+/* --- skeletons (the "finding shade" state) ------------------------------ */
+.kit-skeleton {
+  border-radius: var(--r-card);
+  background: var(--c-hair);
+}
+
+.kit-skeleton--shimmer {
+  background: linear-gradient(90deg, var(--c-hair) 0, var(--c-hair2) 40%, var(--c-hair) 80%);
+  background-size: 400px 100%;
+  animation: kit-shimmer var(--m-shimmer);
+}
+
+@keyframes kit-shimmer {
+  from {
+    background-position: -400px 0;
+  }
+  to {
+    background-position: 400px 0;
+  }
+}
+
+/* ---- app shell (2026-09-05, Task 11) ---- */
+/* The phone frame: a full-bleed map with one screen's chrome floating over
+   it. Every screen positions itself through these classes, so switching
+   screens never re-parents (and never remounts) the map. */
+
+.shell {
+  position: relative;
+  height: 100dvh;
+  width: 100%;
+  overflow: hidden;
+  background: var(--c-page);
+  font-family: var(--font-ui);
+  color: var(--c-ink);
+}
+
+.shell-map {
+  position: absolute;
+  inset: 0;
+}
+
+/* maplibre's zoom buttons are a debug-page affordance: on the phone they
+   sit under the search bar and the design has no such control (pinch and
+   double-tap remain). The attribution, bottom right, stays. */
+.shell .maplibregl-ctrl-top-right {
+  display: none;
+}
+
+/* ...but "bottom right" on the phone is exactly where the tab bar is. The
+   opaque bar painted straight over the attribution control: the OSM credit
+   was invisible and every tap on the (i) hit "Settings" instead (QA
+   F2-01). So it is lifted above the bar wherever the bar is shown by its
+   whole height plus one step of air (PhoneLayout sets data-tabbar). The web
+   layout has no tab bar and keeps maplibre's placement. */
+.shell[data-tabbar="true"] .maplibregl-ctrl-bottom-right {
+  bottom: calc(var(--tabbar-h) + var(--sp-2));
+}
+
+/* ...and it is white. maplibre paints its own credit pill #fff with black
+   type, which over MEADOW_DARK is the one surface on a dark screen that
+   still belongs to the light theme (slice 9's dark pass). It is the map's
+   chrome but it is on OUR page, so it takes the page's card and ink like
+   every other pill. The (i) summary keeps maplibre's black glyph — a
+   background-image, not type, so it cannot take a token — and is inverted
+   in the dark theme, where the pill behind it is dark; its own background
+   is cleared first so the filter has only the glyph to work on.
+   The selectors carry `.shell` because maplibre-gl.css is imported from
+   components/MapView.tsx and may land after this file in the bundle: one
+   more class is what makes the cascade's answer independent of that. */
+.shell .maplibregl-ctrl-attrib,
+.shell .maplibregl-ctrl-attrib.maplibregl-compact {
+  background-color: var(--c-card);
+  color: var(--c-ink);
+}
+
+.shell .maplibregl-ctrl-attrib a {
+  color: var(--c-ink);
+}
+
+.shell .maplibregl-ctrl-attrib-button,
+.shell .maplibregl-ctrl-attrib.maplibregl-compact-show .maplibregl-ctrl-attrib-button {
+  background-color: transparent;
+}
+
+:root[data-theme="dark"] .shell .maplibregl-ctrl-attrib-button {
+  filter: invert(1);
+}
+
+/* the floating search bar, and the routes header that replaces it.
+   `env(safe-area-inset-top, 0) + 12px` is THE top inset of this app (SPEC
+   section 3): 12 px in a browser tab, ~56 px installed. Every box below
+   that hangs from the top of the phone is measured from it. */
+.shell-top {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + var(--sp-3));
+  left: var(--sp-4);
+  right: var(--sp-4);
+  z-index: 16;
+}
+
+/* the locate button, clear of the tab bar. z 22 rather than 14 since slice
+   4: it rides on top of the sheet, which now moves under it, so at the tall
+   snap it is still reachable instead of being buried. A modal sheet (24) and
+   its scrim (23) still cover it, which is right — nothing behind a dialog is
+   meant to be tappable. */
+.shell-float {
+  position: absolute;
+  right: var(--sp-4);
+  /* 12 px above whatever sheet is on screen, at EVERY snap: --sheet-h is
+     the height the shell measures off the sheet and publishes
+     (ui/PhoneLayout.tsx, kit/Sheet.tsx). Slice 4 gave the routes and loops
+     screens this and slice 1 left the base rule a constant, so the place
+     and pin cards went on burying the button under them (slice 1
+     deviation 5). --float-base is the fallback for the frame before the
+     first measurement lands, and for Home, which has no sheet at all: 148
+     + 12 is the 160 the button has always sat at there. The clamp is the
+     tall snap, where the sheet leaves no map — the button stops under the
+     R4 header rather than climbing behind it. */
+  bottom: min(calc(var(--sheet-h, var(--float-base, 148px)) + 12px), calc(100dvh - 193px));
+  z-index: 22;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.shell-locate {
+  width: var(--sz-target);
+  height: var(--sz-target);
+  border: 0;
+  border-radius: 50%;
+  background: var(--c-card);
+  box-shadow: var(--sh-float);
+  color: var(--c-ink);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+/* --- the layers button, and what it opens (CR-02 edits 2 and 3) --------- */
+/* The locate button's circle, in the opposite corner of the map: 44 px,
+   the card surface, the float shadow. Ink-filled the moment either layer is
+   on — `--c-banner` under `--c-onBanner`, the pair the walk banner and the
+   dark chips already wear and the one scripts/contrast.mjs holds at 4.5:1 in
+   BOTH themes ("the ink button"). The dark theme therefore inverts on its
+   own: the card is dark, the ink fill is darker still and its glyph light,
+   which is what the board's light-theme pair means one theme down. */
+.shell-layers {
+  width: var(--sz-target);
+  height: var(--sz-target);
+  border: 0;
+  border-radius: 50%;
+  background: var(--c-card);
+  box-shadow: var(--sh-float);
+  color: var(--c-ink);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex: none;
+}
+
+.shell-layers[data-on="true"] {
+  background: var(--c-banner);
+  color: var(--c-onBanner);
+}
+
+/* Phone: floating over the map, 12 px under the box the screen hangs from
+   the top — the 52 px search bar on the Route tab, W0's 44 px pill on
+   Wander. Both are measured from THE top inset (SPEC §3), the same one
+   .shell-top uses, so the button moves with the safe area like everything
+   else. z 16 is the floating-chrome rung: over the map, under every sheet.
+
+   The RIGHT inset is 16, not the board's literal 12: on the board the search
+   bar, this button and Locate all share one right edge, and the board's
+   search bar is at 12 where this app's is at 16 (SPEC §3's top inset). 12
+   here left the button 4 px proud of its own column (CR-02 slice B review,
+   finding 2). */
+.shell-layers--float {
+  position: absolute;
+  right: var(--sp-4);
+  top: calc(env(safe-area-inset-top, 0px) + var(--sp-3) + var(--sz-searchBar) + var(--sp-3));
+  z-index: 16;
+}
+
+.shell-layers--float[data-under="pill"] {
+  top: calc(env(safe-area-inset-top, 0px) + var(--sp-3) + var(--sz-target) + var(--sp-3));
+}
+
+/* …and the 30 px round chip the same control becomes on R4 and W1, where
+   there is no map corner to float over (CR-03 Q2, board `c-q2`): the header
+   owns the top of the phone and the sheet the bottom, so the layers ride at
+   the right end of the chip row. It keeps the button's ink fill and its
+   44 px hit slop (the `--- 44 px hit targets ---` block below). */
+.shell-layers--chip {
+  /* A FLEX SIBLING of the chip scroller, not a thing pinned over it
+     (CR-04 ruling 2, board O2). It hung off the row's right edge from
+     CR-03 Q2 until 2026-09-10 and the chips scrolled under it: at 360 px in
+     German the access chip came to rest beneath the circle and every tap on
+     it opened the layers sheet. Nothing overlaps now — the row gives the
+     scroller `flex: 1; min-width: 0` and this chip `flex: none` (inherited
+     from .shell-layers) with 6 px between them, so the scroller simply ends
+     where the chip begins. `relative` is kept for the 44 px hit slop below,
+     which needs a containing block now that this is not one. */
+  position: relative;
+  width: var(--sz-chipHeader);
+  height: var(--sz-chipHeader);
+  box-shadow: var(--sh-chip);
+}
+
+/* One row of the sheet and of the popover: the name, where the data comes
+   from, what its colours mean, and the switch. 56 px minimum with a hairline
+   above it (board C) — so the first row is separated from the title as well,
+   which is what makes the popover read as a list rather than as a paragraph
+   with switches in it. */
+/* The rows and the note are ONE child of the sheet (and of the popover), not
+   three: they separate themselves with their own hairlines, and the modal
+   sheet's 14 px gap between siblings would be a second separator on top of
+   each rule. It is also what keeps the sheet as short as it is — see the
+   height note on .layers-row. */
+.layers-body {
+  display: flex;
+  flex-direction: column;
+}
+
+.layers-rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.layers-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-height: 56px;
+  padding: var(--sp-1) 0;
+  border-top: 1px solid var(--c-hair);
+}
+
+.layers-row-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.layers-row-title {
+  font-size: var(--fs-row);
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-ui);
+}
+
+.layers-row-source {
+  font-size: var(--fs-caption);
+  color: var(--c-muted);
+  line-height: var(--lh-ui);
+}
+
+.layers-row-legend {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: var(--sp-1);
+  font-size: var(--fs-nano);
+  color: var(--c-muted);
+}
+
+/* The paint the shade overlay really puts on the map — `#000 @ 0.43`, SPEC
+   §6.2 / tokens.json `overlay.shade` — so the swatch is the colour it is
+   legending. It used to be an invented grey (#8b8e88), which was neither the
+   overlay's nor a token (CR-02 slice B review, finding 5). */
+.layers-swatch {
+  width: 14px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--c-shadeSwatch);
+  flex: none;
+}
+
+/* 55 dB to 75+, the noise raster's own ramp — SPEC §6.2 / tokens.json
+   `overlay.noise.stops`, generated into --g-noiseRamp by scripts/tokens.mjs
+   (the legend's alpha is the script's; see the note there). */
+.layers-ramp {
+  flex: 1;
+  max-width: 140px;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--g-noiseRamp);
+}
+
+.layers-note {
+  margin: 0;
+  padding-top: 6px;
+  border-top: 1px solid var(--c-hair);
+  font-size: 12.5px;
+  color: var(--c-muted);
+  line-height: var(--lh-body);
+}
+
+/* Web: the popover, anchored above the button it belongs to and aligned to
+   its right edge (board `w-layers-day`). 300 px, radius 14, padding
+   14 16 12 — and NOT a sheet: the map stays live behind it, because the
+   question it asks is about the map. */
+.web-layers {
+  position: relative;
+  display: flex;
+}
+
+.layers-pop {
+  position: absolute;
+  bottom: calc(100% + var(--sp-2));
+  right: 0;
+  width: 300px;
+  box-sizing: border-box;
+  background: var(--c-card);
+  border: 1px solid var(--c-hair2);
+  border-radius: var(--r-card);
+  box-shadow: var(--sh-float);
+  padding: 14px var(--sp-4) var(--sp-3);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* 18 is the popover's own step, one under the 24 a sheet's title uses. The
+   head it sits in is `.kit-sheet-head` (the flex row), but the title keeps
+   its own class: `.kit-sheet-title` is declared later in this file and would
+   win the size on source order alone. */
+.layers-pop-title {
+  font-size: 18px;
+  font-weight: var(--fw-bold);
+  line-height: var(--lh-ui);
+}
+
+/* --- the day scrubber (CR-02 edit 5, SPEC §6.7, board `w-layers-day`) --- */
+/* Bottom-centre of the MAP BAND, not of the viewport. The board draws it at
+   `left: 50%` of a 1440 frame, where a 408 px card on one side and a 44 px
+   control stack on the other are near enough symmetrical for that to read as
+   centred. They are not at 1024, where the card is 360 and the stack is the
+   same width it always was, so the box is pinned to the two things it must
+   not cover and the card centres inside whatever is left. Below the band's
+   own width the card shrinks rather than sliding under the panel.
+   The floor is the map's credit plus a gap: the board's `bottom: 24` sits
+   exactly ON the 24 px attribution line, and an attribution a card grows
+   over is a licence the app stopped honouring (slice 8 review, F3). */
+.web-scrub {
+  position: absolute;
+  /* Centred in the VIEWPORT, as the board draws it (w-layers-day: 384–1056
+     at 1440), not in the strip beside the card — that read as "offset to
+     the right" on the first live desktop (Viktor, 2026-09-15). The card
+     is short on every screen the scrubber shows (Home, W0, place, pin) and
+     the scrubber sits at the floor, so the two never meet; the control
+     stack's column is kept clear on both sides so the maths stays
+     symmetric. */
+  left: calc(var(--sp-4) + var(--sz-target) + var(--sp-4));
+  right: calc(var(--sp-4) + var(--sz-target) + var(--sp-4));
+  bottom: calc(var(--sp-4) + var(--web-attrib-h));
+  z-index: 14;
+  display: flex;
+  justify-content: center;
+  /* the band is wider than the card: the map underneath stays draggable */
+  pointer-events: none;
+}
+
+.day-scrub {
+  pointer-events: auto;
+  width: min(640px, 100% - var(--sp-7));
+  box-sizing: border-box;
+  background: var(--c-card);
+  border-radius: var(--r-webCard);
+  box-shadow: var(--sh-webCard);
+  padding: var(--sp-3) var(--sp-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.day-scrub-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+/* 36 px on the board, and the ink circle the layers button wears when it is
+   on: `--c-banner` under `--c-onBanner`, the pair scripts/contrast.mjs holds
+   at 4.5:1 in both themes. Its HIT area is 44 (the shared ::before slop
+   below), which is what WCAG 2.5.5 asks and what the a11y sweep measures. */
+.day-scrub-play {
+  flex: none;
+  width: var(--sz-buttonSmall);
+  height: var(--sz-buttonSmall);
+  border: 0;
+  border-radius: 50%;
+  background: var(--c-banner);
+  color: var(--c-onBanner);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  position: relative;
+}
+
+/* The title and its subline take whatever the clock and the Now pill leave.
+   The subline WRAPS rather than ellipsising: German writes the same sentence
+   at about 490 px against English's 330, and the half that would be cut is
+   "Sonnenuntergang 19:55" — the sunset the card has just promised to name.
+   A second line in one language is cheaper than a broken promise in it. */
+.day-scrub-text {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.day-scrub-title {
+  font-size: var(--fs-body);
+  font-weight: var(--fw-bold);
+  line-height: var(--lh-ui);
+}
+
+.day-scrub-sub {
+  font-size: var(--fs-caption);
+  color: var(--c-muted);
+  line-height: var(--lh-body);
+}
+
+/* The clock is the biggest thing on the card because it is the answer the
+   card exists to give. Tabular figures, so the digits do not jitter as the
+   sun crosses an hour. */
+.day-scrub-clock {
+  margin-left: auto;
+  font-size: var(--fs-h1);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--tr-num);
+  line-height: var(--lh-tight);
+  font-variant-numeric: tabular-nums;
+}
+
+.day-scrub-now {
+  flex: none;
+  height: var(--sz-chipCompact);
+  padding: 0 var(--sp-3);
+  border: 1.5px solid var(--c-hair2);
+  border-radius: var(--r-chip);
+  background: none;
+  color: var(--c-ink);
+  font-family: var(--font-ui);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-semibold);
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  position: relative;
+}
+
+/* The track IS the leave-at slider's (.route-slider) — 8 px high, a 26 px
+   `--c-sun` thumb in a card-coloured ring — and the two share those rules
+   now, down by .route-slider. It differs in one thing, which is the one
+   thing it sets here: its gradient stops are the DAY's, so a December track
+   is short and orange and a June one long and bright. `--c-banner` and
+   `--c-sun` are dark and amber in BOTH themes, which is what a sky wants:
+   the sun does not invert when the reader turns the lights down.
+   An <input> cannot carry the ::before hit slop, so — as with the search
+   field (QA F4-03) — the control is 44 px tall and paints an 8 px track. */
+.day-scrub-range {
+  /* the DAY's own gradient, painted by the shared track rules below: dark at
+     both ends, warm at sunrise and sunset, amber at solar noon, with the
+     three positions handed in by ui/DayScrubber.tsx */
+  --track-bg: linear-gradient(
+    90deg,
+    var(--c-banner) 0%,
+    var(--c-warn) var(--scrub-rise),
+    var(--c-sun) var(--scrub-noon),
+    var(--c-warn) var(--scrub-set),
+    var(--c-banner) 100%
+  );
+  display: block;
+  width: 100%;
+  height: var(--sz-target);
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  margin: 0;
+  cursor: pointer;
+}
+
+/* Every third hour, at the ends of the track it labels. aria-hidden: the
+   range says its own value in words (`aria-valuetext`), and six times "the
+   time is written here" is noise to a screen reader. */
+.day-scrub-ticks {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--fs-nano);
+  color: var(--c-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- the scrubber below 900 px: one row, no text column ------------------
+   The card's head needs about 190 px for play + clock + Now + its gaps, so
+   the title column has roughly `cardW - 220` to put a sentence in and needs
+   about 176 of it for one line — i.e. a card of ~400, i.e. a viewport of
+   ~900. Below that the head used to WRAP: measured at 768 x 1024 the card
+   was 264 x 320 with the title on four lines and the subline on eight, a
+   third of a tablet's map under a card that had stopped being a row (CR-02
+   slice C review, F1).
+
+   Viktor's ruling, 2026-09-09: never hide the scrubber on a tablet — drop
+   the text instead. So below 900 the card is `play · track · clock · Now`
+   on one line: the head stops being a box (`display: contents`) so the range
+   can stand inside the same row, the text column is visually hidden but
+   stays in the tree because `aria-labelledby` points at its title, and the
+   tick labels go with it — there is no track column left for them to sit
+   under. The clock drops one step of type and the padding one step of space,
+   which is what buys the track its width at 768. Every hit area is
+   untouched: play is 36 painted / 44 hit, Now is 32 / 44, the range is a
+   44 px control painting an 8 px track. */
+@media (max-width: 899px) {
+  .day-scrub {
+    flex-direction: row;
+    align-items: center;
+    gap: var(--sp-2);
+    padding: var(--sp-2) var(--sp-3);
+  }
+
+  /* the head's four children become the card's own, so the range joins them */
+  .day-scrub-head {
+    display: contents;
+  }
+
+  /* kept in the tree: the card's accessible name is this title's id */
+  .day-scrub-text {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .day-scrub-play {
+    order: 1;
+  }
+
+  .day-scrub-range {
+    order: 2;
+    flex: 1 1 auto;
+    width: auto;
+    min-width: 72px;
+  }
+
+  .day-scrub-clock {
+    order: 3;
+    margin-left: 0;
+    font-size: var(--fs-h3);
+  }
+
+  .day-scrub-now {
+    order: 4;
+  }
+
+  /* nothing to label: the track is a column in a row now */
+  .day-scrub-ticks {
+    display: none;
+  }
+}
+
+/* a screen that covers the map entirely (search); the bar above it stays
+   visible, hence the top padding rather than a shorter box */
+.shell-page {
+  position: absolute;
+  inset: 0;
+  z-index: 15;
+  background: var(--c-card);
+  overflow-y: auto;
+  padding: calc(env(safe-area-inset-top, 0px) + 80px) var(--sp-4) var(--sp-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.shell-results {
+  display: flex;
+  flex-direction: column;
+}
+
+.shell-note {
+  margin: 0;
+  font-size: var(--fs-caption);
+  color: var(--c-muted);
+}
+
+/* a sheet's title block: the place name, or "Dropped pin" over its address */
+.shell-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.shell-title {
+  font-size: var(--fs-h2);
+  font-weight: var(--fw-bold);
+  line-height: var(--lh-ui);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* --- the place and pin cards, compact (CR-01 edit 8, board HB-place) ----- */
+/* The title drops from 24 to 20 — 18 is what the board draws, and 20 is the
+   nearest type token this app has. The tags stay on ONE line and run off the
+   right edge instead of wrapping to a second, and the buttons are the 44 the
+   board gives them rather than the 46 a full-height sheet uses. */
+.place-head .shell-title {
+  font-size: var(--fs-h3);
+}
+
+.place-tags {
+  gap: 6px;
+  overflow: hidden;
+}
+
+.place-actions .kit-btn {
+  height: 44px;
+}
+
+/* "Route · 21 min" is the longer of the two, and the one being offered */
+.place-actions > :first-child {
+  flex: 1.4 1 0;
+}
+
+/* …and these two cards sit 12 px over the tab bar rather than the 22 a
+   sheet that IS its screen takes, which is what the board draws and 10 px
+   of map back (CR-01 edit 8). Scoped by the button row rather than by a
+   flag on the component: the loops sheet keeps its 22.
+
+   `:not([data-snap="peek"])` is the cascade, not decoration: this rule sits
+   1000 lines below the snap block and beats it at equal specificity, so a
+   card that ever reached `peek` got 69 px of bottom padding inside a 150 px
+   box and lost its tag row into the overflow (CR-01 review, F11 — which is
+   what F1's back gesture looked like on screen). A card has no peek rung
+   since that fix; this makes the CSS say so too. */
+.kit-sheet--tabbar:not([data-snap="peek"]):has(.place-actions) {
+  padding-bottom: calc(var(--tabbar-now) + var(--sp-3));
+}
+
+/* the quiet text link under a sheet's buttons ("Report") */
+.shell-link {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  padding: var(--sp-1);
+  border: 0;
+  background: none;
+  font-family: var(--font-ui);
+  font-size: var(--fs-chip);
+  font-weight: var(--fw-semibold);
+  color: var(--c-muted);
+  cursor: pointer;
+}
+
+/* The bar itself, and the 200 ms slide it leaves on (CR-01 edit 5). It is
+   MOUNTED on every phone screen — ui/tabBar.ts decides which ones show it —
+   because a bar that unmounted could not slide, and because the map's bottom
+   padding has to follow it in the same frame rather than a paint later.
+   `visibility` is what takes it out of the tab order and the a11y tree once
+   it is gone, and it is transitioned (a discrete property: it flips at the
+   END of the slide out and at the START of the slide in) exactly the way
+   .kit-sheet[data-open="false"] does it. --m-sheet is the sheet's own
+   easing, so the two move together; under prefers-reduced-motion the rule at
+   the foot of this file turns both off and the change is instant. */
+/* The bar slides out of the bottom of the phone rather than unmounting, so
+   the peeking sheet above it and the bar under it move together — one
+   200 ms curve for both, --m-tabbar (CR-C review, C4 and C10; the CR asks
+   for 200 and --m-sheet is 240). */
+.shell-tabbar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 22;
+  transition: transform var(--m-tabbar), visibility var(--m-tabbar);
+}
+
+.shell[data-tabbar="false"] .shell-tabbar {
+  transform: translateY(100%);
+  visibility: hidden;
+}
+
+/* ---- route flow (task 12) ---- */
+/* The routes screen and everything downstream of it: the A→B header, the
+   two map chips, the preference and leave-at sheets, the navigation banner
+   and the arrival bar. Every colour, font size and radius is a token. The
+   lengths are not all on the --sp scale: 1.5, 6, 10, 11.5, 13.5, 14, 18, 30,
+   50, 76, 78, 96, 112, 118, 140 and 330 px are the mockups' own measurements
+   (border widths, skeleton and bar heights, the clock column, the chip row's
+   offset under the search bar, and the height the routes sheet clears). */
+
+/* --- ABHeader: see the R4 header block at the end of this file ---------- */
+
+/* --- the two map chips -------------------------------------------------- */
+.route-chips {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 74px);
+  left: var(--sp-4);
+  right: var(--sp-4);
+  z-index: 16;
+  display: flex;
+  gap: var(--sp-2);
+}
+
+/* --- a chip row that scrolls, with a right fade (CR-01 edit 7) ----------- */
+/* Both rows in the app — the R4 header's three and Wander's four — are wider
+   than a 390 px phone in at least one language, and wrapping is not open to
+   either of them: R4's panel height is published (SPEC §3 R4) and Wander's
+   row floats over the map. So they scroll sideways, and the right edge fades
+   over 24 px (SPEC §3b) to say so — a hard edge reads as "that is all there
+   is", which is the bug the live phone build showed.
+   The trailing padding is the SAME 24: it is scrollable room after the last
+   chip, so at full scroll that chip comes to rest exactly where the fade
+   begins and is never drawn through it.
+   The rest is the pair slice 9 established: 6 px of vertical padding and
+   4 px of horizontal, cancelled by an equal negative margin, so the scroll
+   container clips neither the chips' drop shadow nor their dark-theme
+   hairline nor their 36 px hit slop, and the row still paints exactly where
+   the board draws it. -webkit-mask-image is there for Safari, which is the
+   phone this CR was written on. */
+.chip-row {
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: 6px 4px;
+  margin: -6px -4px;
+}
+
+/* ...and only while the chips really overflow (kit/ChipRow.tsx measures
+   it): a row that fits wore the fade over its last chip (2026-09-08) */
+.chip-row--over {
+  padding-right: 24px;
+  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent);
+  mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent);
+}
+
+.chip-row::-webkit-scrollbar {
+  display: none;
+}
+
+/* --- the header chip row: scroller BESIDE the Layers chip (CR-04 r2) ----- */
+/* Two flex children, 6 px apart (board O2): the scrolling chips take what is
+   left (`flex: 1; min-width: 0`) and the 30 px Layers chip takes its own
+   width (`flex: none`). CR-03 Q2 pinned that chip over the row's right end
+   instead and gave the row a 54/30 px mask so the chips faded as they
+   scrolled under it. Two things were wrong with that, and CR-04 ruling 2
+   ends both: a chip could come to rest under the circle and answer taps with
+   the wrong sheet (360 px German, the access chip), and the row wore a fade
+   even where nothing was hidden behind it. Nothing overlaps now, so the only
+   fade left is `.chip-row--over`'s own 24 px — which appears exactly when
+   kit/ChipRow.tsx measures real overflow, and not otherwise. */
+.chip-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* .route-chips is `absolute` on its own (it floats over the map on the
+   screens that have no panel); inside this row the WRAPPER holds the
+   position and the scroller is an ordinary flex child. */
+.chip-bar > .route-chips {
+  position: static;
+  inset: auto;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* Wander's row floats over the map, so the WRAPPER takes the position the
+   row had: 16 px in from both edges (--sp-4, what the base .route-chips
+   rule carried), under the 44 px header pill. Said 12 until the S3 review,
+   finding 5 — the number was the comment's, never the rule's. */
+.chip-bar--wander {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + var(--sp-3) + var(--sz-target) + var(--sp-2));
+  left: var(--sp-4);
+  right: var(--sp-4);
+  z-index: 16;
+}
+
+/* Wander's four chips (SPEC §3 W1): the routes header's 30 px pills, over
+   the map. Four of them are wider than a 390 px phone — the board draws them
+   running off the right edge — so the row is a .chip-row and scrolls. */
+.route-chips--wander {
+  /* …and they hang under the 44 px header pill rather than under the 52 px
+     search bar the base rule is measured from: 12 + 44 + 8 = 64 (CR-01
+     edit 6, board HB-wander). */
+  top: calc(env(safe-area-inset-top, 0px) + var(--sp-3) + var(--sz-target) + var(--sp-2));
+}
+
+.route-chips--wander .kit-chip {
+  height: var(--sz-chipHeader);
+  flex: none;
+}
+
+/* The 30 px header rows (R4's three, Wander's four) are the only chip rows
+   that have to fit a phone side by side, so they sit tighter than the
+   36 px map chips: 12 px of padding and a 5 px gap. With the access chip
+   an icon, Wander's four then fit 390 px in English — before, the fourth
+   ran off the phone and wrapped in the web card (Viktor, 2026-09-08). */
+.route-chips--wander,
+.route-chips--header {
+  gap: 5px;
+}
+
+.route-chips--wander .kit-chip:not(.kit-chip--icon),
+.route-chips--header .kit-chip:not(.kit-chip--icon, .kit-chip--sun) {
+  padding: 0 12px;
+}
+
+/* the preference chip carries a second line while the clock is choosing */
+.route-chip-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  line-height: var(--lh-tight);
+}
+
+.route-chip-sub {
+  font-size: var(--fs-micro);
+  font-weight: var(--fw-semibold);
+  color: var(--c-muted);
+}
+
+/* Only the fallback differs on the routes screen: the rule that follows the
+   sheet is .shell-float's, one place for all three screens (slice 8). */
+.route-float {
+  --float-base: 330px;
+}
+
+/* Inside a peeking sheet a button is 44, not the 46 it is everywhere else
+   (SPEC §3b): the peek budget is measured in whole pixels and those two are
+   the difference between a card that keeps its meters and one that drops
+   them. Still a 44 px target, so the a11y rule below is satisfied. */
+.kit-sheet[data-snap="peek"] .kit-btn {
+  height: 44px;
+}
+
+/* The skeleton wearing the peek snap's shape (CR-01 edit 2): one block the
+   height of the compact card, and a greyed-out button row under it. Same
+   geometry as the answer that replaces it, so the sheet's top edge does not
+   move when the plan lands. */
+.route-skeleton-peek {
+  height: var(--peek-card, 66px);
+  flex: none;
+}
+
+.route-skeleton-btn {
+  height: 44px;
+  border-radius: 22px;
+  flex: 1 1 0;
+}
+
+.route-skeleton-btn:first-child {
+  flex: 1.6 1 0;
+}
+
+/* --- SheetHead (kit; it landed with this block, in fix round 1) -------- */
+.kit-sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+
+.kit-sheet-title {
+  font-size: var(--fs-h2);
+  font-weight: var(--fw-bold);
+  line-height: var(--lh-ui);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* --- computing ---------------------------------------------------------- */
+.route-computing {
+  font-size: var(--fs-chip);
+  font-weight: var(--fw-semibold);
+  color: var(--c-accent);
+}
+
+.route-skeleton-card {
+  height: 96px;
+}
+
+/* 81 since the cards took the panel rhythm's 12: an alternative measures
+   five more than it did, and a skeleton that is the wrong height moves the
+   sheet's top edge the moment the plan lands (2026-09-16). */
+.route-skeleton-delta {
+  height: 81px;
+  flex: 1 1 0;
+}
+
+/* --- no route ----------------------------------------------------------- */
+.route-noroute {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border: 1.5px solid var(--c-warn);
+  border-radius: var(--r-card);
+  /* board HB-no-route: 14 16 inside the warn border */
+  padding: 14px var(--sp-4);
+}
+
+.route-noroute-title {
+  font-size: var(--fs-button);
+  font-weight: var(--fw-bold);
+  line-height: var(--lh-ui);
+}
+
+.route-noroute-actions {
+  display: flex;
+  gap: var(--sp-2);
+}
+
+/* --- preference sheet (R5) ---------------------------------------------- */
+/* Three rows with descriptions and an Apply became one segmented control and
+   one line (board HB-preference, slice 4). The control is the kit's, one
+   size up: SPEC section 4 draws the segment at 36 and R5 at 40, which is the
+   field height. */
+.pref-segment .kit-segment-item {
+  height: var(--sz-field);
+}
+
+/* the "auto · 11–16 h" badge and the sentence beside it — one line, ellipsis
+   rather than a wrap, so the sheet's height never depends on the copy */
+.pref-segment .kit-segment-item[aria-checked="true"] {
+  color: var(--c-accent);
+}
+
+.pref-reason {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-caption);
+  line-height: var(--lh-ui);
+  color: var(--c-muted);
+}
+
+.pref-reason-text {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* --- leave-at sheet ----------------------------------------------------- */
+.route-clockrow {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+}
+
+.route-clock {
+  width: 112px;
+  flex: none;
+  font-size: var(--fs-display);
+  font-weight: var(--fw-bold);
+  line-height: var(--lh-tight);
+  letter-spacing: var(--tr-display);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The departure slider. The debug page has a track like this one, written
+   in raw hex with no dark variant (.hour-slider); this is the same idea on
+   tokens — the day's own shade curve, indigo at both ends and pale at noon,
+   so it flips with the theme. Vendor pseudo-elements cannot be grouped in
+   one rule: a selector a browser does not know invalidates the whole list,
+   so -webkit- and -moz- are written out separately. */
+.route-slider {
+  /* the day's own shade curve, indigo at both ends and pale at noon */
+  --track-bg: linear-gradient(
+    90deg,
+    var(--c-banner) 0%,
+    var(--c-quiet) 18%,
+    var(--c-well) 42%,
+    var(--c-well) 55%,
+    var(--c-quiet) 80%,
+    var(--c-banner) 100%
+  );
+  flex: 1;
+  min-width: 0;
+  height: var(--sz-target);
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  margin: 0;
+  cursor: pointer;
+}
+
+/* The two sliders in the app — the departure hour and the day scrubber —
+   are the same control in every measurement and differ only in the ramp they
+   paint, so the ramp is a custom property each one sets on itself and these
+   four rules are written once (CR-02 slice C review, F8). Custom properties
+   inherit into these vendor pseudo-elements, which is what the scrubber's
+   `--scrub-rise/noon/set` already relied on.
+
+   Two classes CAN share one selector list; two ENGINES cannot. A selector a
+   browser does not know invalidates the whole list, so -webkit- and -moz-
+   stay in rules of their own. */
+.route-slider::-webkit-slider-runnable-track,
+.day-scrub-range::-webkit-slider-runnable-track {
+  height: var(--sp-2);
+  border-radius: var(--r-pill);
+  background: var(--track-bg);
+}
+
+.route-slider::-moz-range-track,
+.day-scrub-range::-moz-range-track {
+  height: var(--sp-2);
+  border-radius: var(--r-pill);
+  background: var(--track-bg);
+}
+
+/* the sun, riding the day: 26 px, centred on the 8 px track */
+.route-slider::-webkit-slider-thumb,
+.day-scrub-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 26px;
+  height: 26px;
+  margin-top: -9px;
+  border-radius: 50%;
+  background: var(--c-sun);
+  border: 2px solid var(--c-card);
+  box-shadow: var(--sh-chip);
+}
+
+.route-slider::-moz-range-thumb,
+.day-scrub-range::-moz-range-thumb {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--c-sun);
+  border: 2px solid var(--c-card);
+  box-shadow: var(--sh-chip);
+}
+
+/* Firefox draws a dotted ring of its own INSIDE the control, beside the
+   app's :focus-visible ring. Both sliders wore it (CR-02 slice C review,
+   F9). */
+.route-slider::-moz-focus-outer,
+.day-scrub-range::-moz-focus-outer {
+  border: 0;
+}
+
+/* "Best: 17:00 · 81 % shade, same 21 minutes" — a muted line under the hour
+   bars where a filled hint box used to be (board HB-leave-at, slice 4) */
+/* The "Best: 17:00 · 81 % shade" line, and — where the artifact prices less
+   than the day is light — what the bars actually cover, at the right end of
+   the same row (board CR-04 O7). Both are the caption's 13 px muted; the row
+   wraps rather than squeezing either, because at 360 px in German the two
+   sentences do not fit one line and a truncated window is worse than a
+   second row. */
+.route-best {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  font-size: var(--fs-caption);
+  line-height: var(--lh-ui);
+  color: var(--c-muted);
+}
+
+.route-best-note {
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+/* --- navigate ----------------------------------------------------------- */
+.route-banner {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 16;
+  background: var(--c-banner);
+  color: var(--c-onBanner);
+  border-radius: 0 0 var(--r-sheet) var(--r-sheet);
+  /* the board draws 20 px of padding in a browser tab, and the app's top
+     inset is `env(safe-area-inset-top) + 12` (SPEC §3): max() is both — 20
+     with no inset, the rule's 12 over one when there is (56 standalone). */
+  padding: max(var(--sp-5), calc(env(safe-area-inset-top, 0px) + var(--sp-3))) var(--sp-5)
+    var(--sp-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.route-banner-line {
+  font-size: var(--fs-h2);
+  font-weight: var(--fw-bold);
+  line-height: var(--lh-ui);
+  /* the distance is the headline and the destination follows it in the same
+     sentence, so this line wraps rather than truncating the name away — but
+     never past two lines, whatever the street is called */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* --- the ETA bar (R8) ---------------------------------------------------
+   One bar along the bottom of the walk, two rows (board HB-navigate): the
+   6 px shade ribbon with its "Shade ahead · sun 3 min" line, then recenter /
+   arrival / End. The separate "Shade ahead" card the pre-rework screen
+   floated over the map is gone — it said the same thing twice as far from
+   the thumb. */
+.route-eta {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 18;
+  background: var(--c-card);
+  border-radius: var(--r-sheet) var(--r-sheet) 0 0;
+  box-shadow: var(--sh-sheet);
+  padding: var(--sp-3) var(--sp-5) calc(env(safe-area-inset-bottom, 0px) + var(--sp-5));
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.route-eta-shade {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: var(--fs-caption);
+  line-height: var(--lh-ui);
+  color: var(--c-muted);
+}
+
+.route-eta-shade-line {
+  flex: 0 1 auto;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.route-eta-shade-lead {
+  color: var(--c-ink);
+}
+
+.route-eta-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.route-eta-recenter {
+  width: var(--sz-target);
+  height: var(--sz-target);
+  flex: none;
+  border: 1.5px solid var(--c-hair2);
+  border-radius: 50%;
+  background: none;
+  color: var(--c-ink);
+  font-family: var(--font-ui);
+  font-size: 18px;
+  line-height: var(--lh-tight);
+  cursor: pointer;
+}
+
+.route-eta-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.route-eta-time {
+  font-size: var(--fs-h2);
+  font-weight: var(--fw-bold);
+  line-height: var(--lh-tight);
+}
+
+/* the board's meta line is a notch bigger than a card's (HB-navigate) */
+.route-eta-text .kit-card-meta {
+  font-size: var(--fs-body);
+}
+
+.route-eta-word {
+  font-size: var(--fs-body);
+  font-weight: var(--fw-semibold);
+  color: var(--c-muted);
+}
+
+/* --- arrived ------------------------------------------------------------ */
+.route-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+
+/* ---- wander (task 13) ---- */
+/* The loops screen's header pill and the "how long?" sheet. Everything is a
+   token except four of the mockup's own measurements: the header pill's
+   18 px side padding (the search bar's), the 64 px tile, the 22 px number on
+   it and the 400 px the locate button sits at — the height of the wander
+   sheet with two alternatives under it. The chips, the sheet, the cards and
+   the no-route card are the route flow's, unchanged. */
+
+/* --- the header: what these loops are, and where they start ------------- */
+/* ONE line since CR-01 edit 6 (board HB-wander): `↻ Loop from Marbachweg
+   310` in a 44 px pill, with the address muted so the eye reads the street
+   and not the sentence. The subline it replaces said the origin a second
+   time and carried the map-tap hint, which is a one-time toast now
+   (ui/wanderHint.ts).
+   12 + 44 + 8 + 30 = 94 px of header, against the two-line version's 110 —
+   16 px straight back to the map, and 4 px under the board's own budget of
+   98 (its 16 px inset against this app's 12). */
+.wander-head {
+  height: var(--sz-target);
+  background: var(--c-card);
+  border-radius: calc(var(--sz-target) / 2);
+  box-shadow: var(--sh-float);
+  display: flex;
+  align-items: center;
+  /* 10 and 14 are the board's own measurements: a 20 px glyph, 10 of air,
+     the line, and 14 in from each end of the pill. */
+  gap: 10px;
+  padding: 0 14px;
+  color: var(--c-ink);
+}
+
+/* One line, one ellipsis: the whole sentence truncates together, so a long
+   street loses its tail rather than pushing "Loop from" off the left. */
+.wander-head-title {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-body);
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-ui);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* …and the address inside it is the quiet half (board HB-wander) */
+.wander-place {
+  font-weight: var(--fw-regular);
+  color: var(--c-muted);
+}
+
+/* The ✕ on the right, 36 × 36 (board HB-wander-expanded). It carries two
+   jobs, never at once: on W3 it clears the via, and on W1 it appears only
+   while the tab bar is away and puts the sheet back down to peek (CR-01
+   edits 5 and 6). The negative margin pulls its box to 6 px from the end of
+   the pill while the text keeps the pill's own 14 — which is the board's
+   `padding: 0 6px 0 14px` written once. The shared 44 px slop below grows
+   the hit area past the pill; nothing is stacked above or below it here, so
+   unlike the R4 header's ✕ it is free to take it (fix round 1, finding 1). */
+.wander-head-clear {
+  flex: none;
+  width: var(--sz-buttonSmall);
+  height: var(--sz-buttonSmall);
+  margin-right: -8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: none;
+  color: var(--c-muted);
+  font-size: var(--sz-closeGlyph);
+  line-height: 1;
+  cursor: pointer;
+}
+
+/* the same, over the wander sheet — the tallest in the app: a route card,
+   two alternatives, Start / Share and the tab bar under them (430 px
+   measured, hence the fallback) */
+.wander-float {
+  --float-base: 440px;
+}
+
+/* --- W0, the idle root (CR-02 slice A, board hb-wander-idle) ------------- */
+/* The same 44 px pill as W1, in the same place, saying the other thing: not
+   "these loops start here" but "shall I plan one?". Two buttons share the
+   box — the sentence and the length — because a button inside a button is
+   not a thing the DOM has (screens/wander/WanderIdle.tsx). The box itself is
+   a plain div, so the shape is declared once and neither button repeats it.
+   10 and 14 are the board's own measurements, as on .wander-head. */
+.wander-idle {
+  height: var(--sz-target);
+  background: var(--c-card);
+  border-radius: calc(var(--sz-target) / 2);
+  box-shadow: var(--sh-float);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px;
+  color: var(--c-ink);
+}
+
+/* The sentence: the whole left of the pill is the tap target, glyph
+   included, so it is the button rather than a label beside one. */
+.wander-idle-plan {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 0;
+  padding: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+/* One line, one ellipsis, exactly as .wander-head-title: a narrow phone
+   loses the tail of the sentence rather than the verb at the front of it. */
+.wander-idle-title {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-body);
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-ui);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* "from your location" is the quiet half — the same split the W1 pill makes
+   between "Loop from" and the street (board hb-wander-idle). */
+.wander-idle-from {
+  font-weight: var(--fw-regular);
+  color: var(--c-muted);
+}
+
+/* ...and the length, which is a second question with a sheet behind it: the
+   board draws it 13/700 in the accent, the one coloured thing on the screen
+   (board hb-wander-idle). Its hit area is grown to 44 by the shared ::before
+   below — the pill is only 44 tall, so it takes it in width alone. */
+.wander-idle-dur {
+  flex: none;
+  border: 0;
+  padding: 0;
+  background: none;
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-bold);
+  line-height: var(--lh-ui);
+  color: var(--c-accent);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+/* W0 has no sheet at all, so the locate button hangs off the tab bar rather
+   than off --sheet-h: 64 + 12 is the board's `bottom: 76px`, which is the
+   57 px bar and 19 px of air. */
+.wander-idle-float {
+  --float-base: 64px;
+}
+
+/* --- the duration sheet ------------------------------------------------- */
+.dur-tiles {
+  display: flex;
+  gap: var(--sp-2);
+}
+
+.dur-tile {
+  flex: 1 1 0;
+  min-width: 0;
+  /* 56 on the board (SPEC section 3 W2); it used to be 64 to make room for
+     an Apply button that the tap now replaces */
+  height: 56px;
+  border: 0;
+  border-radius: var(--r-card);
+  background: var(--c-well);
+  color: var(--c-ink);
+  font-family: var(--font-ui);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.dur-tile[data-sel="true"] {
+  background: var(--c-accent);
+  color: var(--c-onAccent);
+}
+
+.dur-tile-num {
+  font-size: 22px;
+  font-weight: var(--fw-bold);
+  line-height: var(--lh-tight);
+}
+
+.dur-tile-unit {
+  font-size: var(--fs-micro);
+  font-weight: var(--fw-semibold);
+  opacity: 0.85;
+}
+
+/* "Or be back by 15:30 ▾" — one row, because it is one catalog sentence:
+   the mockup splits the label from the time, which no single string can do
+   in two languages. */
+/* the ±5 min caption hangs right under the row: cancel the sheet's 14 px
+   gap down to 2 px so the two read as one item (2026-09-11) */
+.dur-note {
+  margin-top: -12px;
+}
+
+.dur-backrow {
+  min-height: var(--sz-button);
+  border: 0;
+  border-top: 1px solid var(--c-hair);
+  background: none;
+  padding: 0;
+  font-family: var(--font-ui);
+  font-size: var(--fs-row);
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-ui);
+  color: var(--c-ink);
+  text-align: left;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+/* the hour behind "Or be back by": a slider is the one control in this sheet
+   that cannot apply on the move, so it keeps a Set button of its own */
+.dur-backby {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* A modal sheet grows with its content and SCROLLS at its ceiling (see
+   .kit-sheet--modal above) — so its children must not shrink to fit
+   instead. `.kit-btn` carries `flex: 1 1 0` for the two-up action row, and
+   in a column that basis of 0 made "Set 15:30" 18 px tall inside an
+   over-full "be back by" panel at 402 x 700, against the same button's
+   46 px in the leave-at sheet (UX sweep U7). */
+.kit-sheet--modal > *,
+.dur-backby > * {
+  flex: none;
+}
+
+.dur-backby .kit-btn {
+  min-height: var(--sz-button);
+}
+
+/* ---- settings (task 14) ---- */
+/* The Settings tab (a white page of sections rather than a sheet over the
+   map), the city and report sheets it opens, and the outside-city banner on
+   Home. Tokens only; the lengths that are not on the --sp scale are the
+   mockups' own measurements — 1.5 px (the field's border), 13.5 px (the
+   banner's body), 78 px (the banner's top edge, clear of the search bar),
+   90 px (the tab bar), 120 px (the report field) and 20/36 px (the report
+   icon and the ✓ column). */
+
+.set-page {
+  position: absolute;
+  inset: 0;
+  z-index: 15;
+  background: var(--c-card);
+  overflow-y: auto;
+  padding: calc(env(safe-area-inset-top, 0px) + var(--sp-3)) var(--sp-4)
+    calc(var(--tabbar-now) + var(--sp-5));
+  display: flex;
+  flex-direction: column;
+}
+
+/* A column flex container shrinks its children before it lets them overflow:
+   `flex-shrink` is 1 by default, so a Settings page one row too tall for the
+   phone squeezed every row a little instead of growing a scroll range, and
+   `scrollHeight` came out EQUAL to `clientHeight` — a page that cannot be
+   scrolled at all, with its last row ("Report or ask") squeezed under the tab
+   bar and the Routing note overlapping the MAP header by 6 px. Measured at
+   402×691: 749 px of content shrunk to 721, and at 390×744 to exactly 744.
+   These are rows, not a layout that flexes: none of them may give up a pixel
+   (B9, Viktor's phone shot 2026-09-09). */
+.set-page > *,
+.shell-page > * {
+  flex: none;
+}
+
+.set-title {
+  font-size: var(--fs-h1);
+  font-weight: var(--fw-bold);
+  line-height: var(--lh-ui);
+  padding-bottom: 10px;
+}
+
+/* a section label: the small uppercase line above a run of rows */
+.set-section {
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-semibold);
+  color: var(--c-muted);
+  letter-spacing: var(--tr-label);
+  text-transform: uppercase;
+  padding: 10px 0 var(--sp-1);
+}
+
+.set-page > .set-section:first-of-type {
+  padding-top: 0;
+}
+
+/* A row that carries a `note` ends in a wrapped caption, not in the leading
+   under a single-line title, so the 10 px this label keeps above itself read
+   as no gap at all — the "11–16 h shade first …" note sat against the MAP
+   header in Viktor's shot. One step of air puts the label the same 24 px
+   below the note as it sits below a plain row's title (B9). */
+.set-page > .kit-row:has(.kit-row-note) + .set-section {
+  padding-top: var(--sp-4);
+}
+
+.set-segment {
+  padding: var(--sp-2) 0 var(--sp-1);
+}
+
+/* the explanatory line under a toggle ("11–16 h shade first …") and the
+   attribution behind the Data & sources disclosure */
+.set-note {
+  margin: 0;
+  font-size: var(--fs-caption);
+  color: var(--c-muted);
+  line-height: var(--lh-body);
+  padding: 2px 0 var(--sp-2);
+}
+
+/* the last row of the page: accent, with its own icon, and a button rather
+   than a ListRow because ListRow's title is a string */
+.set-report {
+  font-family: var(--font-ui);
+  cursor: pointer;
+  justify-content: space-between;
+}
+
+.set-report-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: var(--fs-row);
+  font-weight: var(--fw-semibold);
+  color: var(--c-accent);
+}
+
+.set-arrow {
+  color: var(--c-muted);
+}
+
+/* --- city sheet --------------------------------------------------------- */
+/* "You're in Offenbach, 1.2 km outside Frankfurt's data." */
+.set-context {
+  margin: 0;
+  font-size: var(--fs-chip);
+  color: var(--c-muted);
+  line-height: var(--lh-body);
+  background: var(--c-well);
+  border-radius: var(--r-field);
+  padding: 10px var(--sp-3);
+}
+
+.set-cities {
+  display: flex;
+  flex-direction: column;
+}
+
+.set-check {
+  color: var(--c-accent);
+}
+
+.set-request {
+  align-self: flex-start;
+  color: var(--c-accent);
+}
+
+/* --- report sheet ------------------------------------------------------- */
+/* Four types since slice 7 (Question first), which is more than 358 px of
+   phone holds on one line — and more still in German. They wrap. */
+/* 6 px, which is board `c-q6`'s own gap and one of the mockups' measured
+   half-steps rather than a scale value (as .set-chips' own 1.5 px hairline
+   and 13.5 px body are). --sp-2 (8) shipped and was undocumented; the board
+   is the authority (S3 review, finding 7). */
+.set-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* …at the 30 px the header rows use, not the map chips' 36: SPEC §3 S3 and
+   board `c-q6` both draw them at 30, and four of them plus a German label
+   are what made this the one row in the app that wraps. The 44 px hit slop
+   is unchanged — it is the shared ::before, and it does not move paint. */
+.set-chips .kit-chip {
+  height: var(--sz-chipHeader);
+}
+
+/* The report sheet's four type chips are the only chips in the app that sit
+   ON a card rather than over the map, so the drop shadow that draws every
+   other chip's edge has nothing to fall on. NONE of the four keeps it — the
+   selected one kept it until the S3 review (finding 7), where the board
+   draws no shadow on any of them. Idle they take a 1.5 px hairline instead
+   — the board's own edge for them (board `c-q6`), and the same one the dark
+   theme already gave every chip further up. Selected they take the ink fill
+   and need no edge at all. */
+.set-chips .kit-chip {
+  box-shadow: none;
+}
+
+/* the dark theme draws every chip with a hairline shadow of its own, at a
+   specificity this block has to match to clear it */
+:root[data-theme="dark"] .set-chips .kit-chip {
+  box-shadow: none;
+}
+
+.set-chips .kit-chip:not(.kit-chip--pressed) {
+  border: 1.5px solid var(--c-hair2);
+}
+
+/* "Attach my map position" — a SettingRow's shape (SPEC §4) inside a sheet,
+   so it has no hairline above it: the chips row is not a list. */
+.set-attach-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  min-height: 52px;
+}
+
+.set-attach-label {
+  font-size: var(--fs-row);
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-ui);
+}
+
+.set-textarea {
+  min-height: 120px;
+  box-sizing: border-box;
+  resize: vertical;
+  border: 1.5px solid var(--c-hair2);
+  border-radius: var(--r-segment);
+  padding: var(--sp-3) 14px;
+  font-family: var(--font-ui);
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+  color: var(--c-ink);
+  background: var(--c-card);
+}
+
+.set-textarea::placeholder {
+  color: var(--c-muted);
+}
+
+.set-attach {
+  font-size: var(--fs-caption);
+  color: var(--c-muted);
+  line-height: var(--lh-body);
+}
+
+/* the send that did not: said here, with the text still in the field */
+.set-failed {
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-semibold);
+  color: var(--c-end);
+}
+
+/* --- outside the city --------------------------------------------------- */
+/* Under the search bar, over the map — never a sheet: the walker can still
+   look at the city they are outside of. */
+.edge-banner {
+  position: absolute;
+  /* directly under the search bar, 4 px clear of it (board HB-outside): the
+     same top inset .shell-top uses, plus the bar, plus the gap. */
+  top: calc(
+    env(safe-area-inset-top, 0px) + var(--sp-3) + var(--sz-searchBar) + var(--sp-1)
+  );
+  left: var(--sp-4);
+  /* …and it stops short of the Layers button's column: 16 of inset, the
+     44 px button, and 8 px of air (CR-03 Q3, board `cr3-outside-banner`).
+     It used to run the full width and the button sat ON it — the one
+     control the card is telling the reader to use, half covered by the
+     card. The buttons inside wrap instead of the card growing sideways. */
+  right: 68px;
+  z-index: 16;
+}
+
+.edge-outside {
+  background: var(--c-card);
+  border-radius: var(--r-card);
+  box-shadow: var(--sh-float);
+  padding: var(--sp-3) 14px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.edge-outside-title {
+  font-size: var(--fs-body);
+  font-weight: var(--fw-bold);
+  line-height: var(--lh-ui);
+}
+
+.edge-outside-body {
+  font-size: 13.5px;
+  color: var(--c-muted);
+  line-height: 1.4;
+}
+
+.edge-outside-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+
+/* ---- web layout (task 15) ---- */
+/* The tablet and desktop frame: a full-bleed map with one floating card over
+   it, and the phone's own screens composed inside that card unchanged. Two
+   breakpoints, both mirrored in src/ui/layout/breakpoints.ts (and pinned to
+   it by breakpoints.test.ts): 768 px is where the card appears, 1440 px where
+   it grows and a list earns the full-height panel.
+
+   Almost all of this block is un-positioning: every screen box the phone
+   pins over the map (.shell-top, .route-chips, .set-page, the sheets…) goes
+   back into the flow of the card. Tokens only; the lengths that are not on
+   the --sp scale are the mockups' own — 360 and 408 px (the card), 22 px
+   (the zoom pill's radius) and 48/146 px (where the map controls sit, clear
+   of the attribution the map draws at the bottom right). */
+
+.shell--web {
+  /* the card is a light surface on the map, not a page: the phone's page
+     colour would show through the corners of an unloaded map */
+  background: var(--c-page);
+  /* the card's width, in one place: the City list opens as a second card to
+     the RIGHT of it (board W-settings), so it has to know how wide the
+     first one is at this breakpoint. */
+  --web-card-w: 360px;
+  /* the map's own credit, flush in the corner below: the card's cap has to
+     clear it, because an attribution a card grows over is a licence the app
+     stopped honouring (slice 8 review, F3). Measured, not guessed — 24 px
+     in both themes and every basemap this app loads. */
+  --web-attrib-h: 24px;
+}
+
+/* --- the card ------------------------------------------------------------ */
+.web-card {
+  position: absolute;
+  left: var(--sp-4);
+  top: var(--sp-4);
+  z-index: 16;
+  width: var(--web-card-w);
+  /* SPEC §7's "viewport − 32", less the credit line the card would otherwise
+     grow over when it reaches its cap (review F3). */
+  max-height: calc(100dvh - var(--sp-7) - var(--web-attrib-h));
+  overflow-y: auto;
+  box-sizing: border-box;
+  background: var(--c-card);
+  border-radius: var(--r-webCard);
+  box-shadow: var(--sh-webCard);
+  padding: var(--sp-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--web-block-gap);
+}
+
+/* The card's children are the screens' own boxes, flattened out of their
+   fragments: the wordmark first, then the route tab's search bar, then the
+   tab switcher, then everything the screen brought. */
+.web-card > * {
+  order: 3;
+  flex: none;
+}
+
+.web-card > .web-brand {
+  order: 0;
+}
+
+.web-card[data-tab="route"] > .shell-top {
+  order: 1;
+}
+
+/* …except R4's, which is not a search bar but the walk itself. Since CR-03
+   Q1 the panel keeps its head on the routes screen (wordmark · city ▾ ·
+   the three-tab segment), and the A→B block reads as the first thing said
+   ABOUT the walk rather than as the panel's title: under the switcher, with
+   the board's hairline between the two (board `cr3-desktop-routes-head`). */
+.web-card[data-tab="route"] > .shell-top--header {
+  order: 3;
+  /* The hairline is drawn IN the 14 px gap, halfway up it, rather than on
+     the block's top edge with a 12 px padding under it: as a border it made
+     this one gap 27 where every other block gap in the panel was 14, and
+     nothing about the walk justifies the extra 13 (the panel rhythm,
+     2026-09-16). A pseudo-element, so the block's box is still the block
+     and the space above it is still the card's own gap. */
+  position: relative;
+  padding-top: 0;
+}
+
+.web-card[data-tab="route"] > .shell-top--header::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(var(--web-block-gap) / -2);
+  border-top: 1px solid var(--c-hair);
+}
+
+.web-card > .web-tabs {
+  order: 2;
+}
+
+/* --- the wordmark row ---------------------------------------------------- */
+.web-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+.web-wordmark {
+  font-size: var(--fs-h3);
+  font-weight: var(--fw-bold);
+  line-height: var(--lh-ui);
+}
+
+.web-city {
+  margin-left: auto;
+  border: 0;
+  padding: var(--sp-1);
+  background: none;
+  font-family: var(--font-ui);
+  font-size: var(--fs-chip);
+  color: var(--c-muted);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.web-tabs .kit-segment-item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: var(--c-muted);
+}
+
+.web-tabs .kit-segment-item[aria-checked="true"] {
+  color: var(--c-accent);
+}
+
+/* --- the screens, un-pinned ---------------------------------------------- */
+/* Everything the phone floats over the map is a block in the card here. */
+.web-card .shell-top,
+.web-card .route-chips,
+.web-card .chip-bar--wander,
+.web-card .edge-banner,
+.web-card .route-banner,
+.web-card .route-eta,
+.web-card .shell-page,
+.web-card .set-page {
+  position: static;
+  inset: auto;
+  z-index: auto;
+}
+
+/* Wander's four chips scroll sideways over a phone's map (there is no room
+   for a second row without eating it). In a 360/408 px card there IS room
+   below, and a scroller inside a fixed panel reads as broken — so here they
+   wrap instead, and the fade over their right edge would be a lie (CR-01
+   edit 7).
+
+   Scoped to WANDER's row, not to every `.chip-row`. R4's header row wears
+   the same class since edit 7 and does not wrap — it is one line of chips
+   that must scroll inside the card — so the un-scoped version clipped it at
+   the card's edge instead: in German the third chip ("Kinderwagen ▾") ran
+   70 px past a 376 px card with no scroll and no fade, which is the exact
+   bug edit 7 exists to remove (CR-C review, C1). */
+/* The Layers chip is the phone's answer to a screen with no map corner
+   (CR-03 Q2). The web has a corner — the 44 px button is in the bottom-right
+   stack on every screen, R4 and W1 included — so the chip is not drawn here
+   at all, which is also what board `cr3-desktop-routes-head` shows. */
+.web-card .shell-layers--chip {
+  display: none;
+}
+
+.web-card .route-chips--wander {
+  overflow: visible;
+  padding: 0;
+  margin: 0;
+  flex-wrap: wrap;
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+
+/* the map's own screens keep their padding on the phone because they cover
+   it; in the card the card's padding is the only one there is */
+.web-card .shell-page,
+.web-card .set-page {
+  padding: 0;
+  background: none;
+  overflow: visible;
+}
+
+.web-card .set-page > .set-section:first-of-type {
+  padding-top: 0;
+}
+
+/* the card's own wordmark row already names the app, and the segment above
+   the sections already says which tab this is: the page's 28 px "Settings"
+   heading is the phone's, and the board (W-settings) has no second title */
+.web-card .set-title {
+  display: none;
+}
+
+/* The search field, inside the card rather than floating on the map (board
+   W-home): 48 h, a well rather than white-on-white, and no shadow — a card
+   does not cast one onto itself. */
+.web-card .kit-search {
+  height: 48px;
+  border-radius: 24px;
+  background: var(--c-well);
+  box-shadow: none;
+}
+
+.web-card .kit-search-input,
+.web-card .kit-search-value {
+  font-size: var(--fs-row);
+}
+
+/* the screens' own locate buttons: the frame draws one, bottom right */
+.web-card .shell-float {
+  display: none;
+}
+
+.web-card .route-banner {
+  border-radius: var(--r-card);
+  padding: var(--sp-4);
+}
+
+/* --- the walk, on a desktop (SPEC §7, board W-steps) --------------------- */
+/* The card keeps the ETA bar — shade ahead, arrival, remaining, End — and
+   the ink banner goes over the MAP, beside the card: the SAME offset the
+   City list uses (16 + the card + a 20 px gutter = 444), so the two things
+   that sit beside the card sit in one column. The board's own 428 is that
+   sum for a PANEL at x=0, which is the container it draws because it has a
+   Steps list to fill it with; Steps is out, so the panel would be empty and
+   the card's offset is the honest one (slice 8 review, F2).
+   `fixed` rather than a second render tree: the banner is one of the
+   Navigate screen's two boxes, and this whole block is un-pinning the
+   phone's boxes and re-pinning them where the web wants them. Nothing on
+   the way up to it transforms, so `fixed` is the viewport. */
+.shell--web[data-layout="desktop-card"] .web-card .route-banner {
+  position: fixed;
+  top: var(--sp-4);
+  left: calc(var(--sp-4) + var(--web-card-w) + var(--sp-5));
+  right: var(--sp-4);
+  z-index: 16;
+  border-radius: var(--r-webCard);
+  box-shadow: var(--sh-float);
+  padding: var(--sp-4) var(--sp-5);
+}
+
+.web-card .route-eta {
+  border-radius: var(--r-card);
+  box-shadow: none;
+  padding: 0;
+}
+
+/* the inline hour profile the desktop panel has room for (Routes.tsx) */
+/* No hairline and no padding of its own any more: what separates this
+   section from the cards above it is the caption gap — 24 rather than the
+   14 between blocks — and a rule drawn inside that space was a second
+   answer to the same question (the panel rhythm, 2026-09-16). */
+.route-hours {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+/* 24 before a section caption, wherever the caption stands: inside
+   `.route-hours` in the desktop panel, and a bare sibling of the sheet's
+   own blocks in the leave-at sheet. The container has already given it the
+   block gap, so this is the difference between the two. */
+.route-hours-cap {
+  margin-top: calc(var(--web-caption-gap) - var(--web-block-gap));
+  font-size: var(--fs-caption);
+  color: var(--c-muted);
+}
+
+/* --- the sheets, on a web surface ---------------------------------------- */
+/* A plain sheet becomes a block in the card; a modal one a centred dialog
+   over the whole page (kit/Sheet.tsx decides which). */
+.kit-sheet--inline {
+  position: static;
+  padding: 0;
+  background: none;
+  border-radius: 0;
+  box-shadow: none;
+  transform: none;
+  visibility: visible;
+  transition: none;
+}
+
+.kit-sheet--dialog {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  right: auto;
+  bottom: auto;
+  transform: translate(-50%, -50%);
+  width: min(408px, calc(100vw - var(--sp-7)));
+  max-height: calc(100dvh - var(--sp-7) - var(--sp-7));
+  overflow-y: auto;
+  border-radius: var(--r-sheet);
+  box-shadow: var(--sh-webCard);
+  padding: var(--sp-4);
+  /* it does not slide (it is centred, not pinned to an edge) — it fades.
+     Task 15 left it at `none`, which is the reduced-motion answer given to
+     everyone; the block at the foot of this file gives it back to them. */
+  transition: opacity var(--m-sheet), visibility var(--m-sheet);
+}
+
+.kit-sheet--dialog[data-open="false"] {
+  transform: translate(-50%, -50%);
+  opacity: 0;
+}
+
+.shell--web .kit-scrim {
+  position: fixed;
+}
+
+/* --- the City list, as a second card (board W-settings) ------------------ */
+/* Same dialog, different container: at 16/16 to the right of the first card,
+   340 px wide (the board's own figure), content-height. The scrim behind it
+   catches the tap that closes it but does not dim — the card it belongs to
+   has to stay readable beside it, which is the whole point of putting the
+   list there rather than over the middle of the map. */
+.kit-sheet--side {
+  position: fixed;
+  left: calc(var(--sp-4) + var(--web-card-w) + var(--sp-5));
+  top: var(--sp-4);
+  right: auto;
+  bottom: auto;
+  width: 340px;
+  max-height: calc(100dvh - var(--sp-7));
+  overflow-y: auto;
+  border-radius: var(--r-webCard);
+  box-shadow: var(--sh-webCard);
+  padding: var(--sp-4);
+  transform: none;
+  transition: opacity var(--m-sheet), visibility var(--m-sheet);
+}
+
+.kit-sheet--side[data-open="false"] {
+  transform: none;
+  opacity: 0;
+}
+
+/* the full-height panel starts at x=0, so the second card follows it there */
+.shell--web[data-layout="desktop-panel"] .kit-sheet--side {
+  left: calc(var(--web-card-w) + var(--sp-4));
+}
+
+.kit-scrim--clear {
+  background: none;
+}
+
+/* --- the map controls ---------------------------------------------------- */
+/* maplibre's zoom buttons are hidden on the phone (there is nowhere to put
+   them and pinch does the job); on the web they are the pill under the
+   locate button, bottom right, above the attribution the map draws itself.
+   The group keeps maplibre's own white — its glyphs are dark in both
+   themes, and a --c-card pill would swallow them in the dark one. */
+.shell.shell--web .maplibregl-ctrl-top-right {
+  display: block;
+  top: auto;
+  right: 0;
+  /* the boards stack the column at right 16 / bottom 24: the zoom pill sits
+     on the floor and the locate button 10 px above its 88 px */
+  bottom: var(--sp-6);
+}
+
+.shell--web .maplibregl-ctrl-top-right .maplibregl-ctrl-group {
+  margin: 0 var(--sp-4) 0 0;
+  border-radius: 22px;
+  /* `clip` with a margin, not `hidden`: the two round the square buttons
+     inside to the pill's radius identically, but `hidden` also clips the
+     focus ring, which is drawn 3 px OUTSIDE a button that fills the pill's
+     whole width. maplibre's own ring was clipped here too and nobody could
+     see it; ours would have been the same invisible fix (CR-04 review H2).
+     The margin is exactly the ring, so nothing else escapes — the buttons
+     are transparent and the pill's own white is what the reader sees. */
+  overflow: clip;
+  overflow-clip-margin: 3px;
+  box-shadow: var(--sh-float);
+}
+
+.shell--web .maplibregl-ctrl-top-right .maplibregl-ctrl-group button {
+  width: var(--sz-target);
+  height: var(--sz-target);
+}
+
+.web-controls {
+  position: absolute;
+  right: var(--sp-4);
+  /* the column's floor, the 88 px zoom pill it stands on, and the 10 px gap
+     — so the locate button follows if the floor ever moves (review F6) */
+  bottom: calc(var(--sp-6) + 88px + 10px);
+  z-index: 14;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* The credit line the map draws itself: flush into the bottom-right corner
+   on the web, where the boards put it and where the zoom pill's 24 px floor
+   clears it. maplibre's own 10 px margin would have the pill sitting on top
+   of it. The phone leaves it alone — QA F2-01 lifts it over the tab bar. */
+.shell--web .maplibregl-ctrl-bottom-right .maplibregl-ctrl {
+  margin: 0;
+  border-radius: var(--r-tag) 0 0 0;
+}
+
+/* --- 1440 and up: the card grows, and a list fills the height ------------ */
+@media (min-width: 1440px) {
+  .shell--web {
+    --web-card-w: 408px;
+  }
+
+  .shell--web[data-layout="desktop-panel"] .web-card {
+    left: 0;
+    top: 0;
+    height: 100dvh;
+    max-height: none;
+    border-radius: 0;
+    box-shadow: var(--sh-panel);
+    padding: var(--sp-5);
+  }
+
+  /* Boards W-routes, W-wander and W-steps all end with `margin-top: auto`
+     on the action row: in a floor-to-ceiling rail the buttons belong at the
+     foot, not floating under the last card with 400 px of white beneath
+     them. The sheet has to be the thing that grows for that to have any
+     room to work in — in a card it is content-height, and stays so. */
+  .shell--web[data-layout="desktop-panel"] .web-card > .kit-sheet--inline {
+    flex: 1 1 auto;
+  }
+
+  .shell--web[data-layout="desktop-panel"] .web-card > .kit-sheet--inline > .kit-actions:last-child {
+    margin-top: auto;
+  }
+}
+
+/* ---- the phone on its side (CR-03 Q4, SPEC §3b) ------------------------ */
+/* 390 css px of height has no room for a bottom sheet: header + peek left
+   the UX sweep's landscape reader ~145 px of map and a compact card with its
+   meters dropped (sweep U18). So the answer turns through 90°.
+
+   Everything above still applies — this shell wears `.shell--web` and the
+   panel IS `.web-card`, so all the un-pinning, the inline sheets, the
+   dialogs and the map's own corner come for free. What follows is the four
+   differences: the card is flush left and floor to ceiling at 300 px, the
+   tab bar is a rail under it, the results scroll inside it with the buttons
+   pinned to its foot, and the two things the web hides because it has a card
+   head instead — the header's Layers chip — come back.
+
+   No media query: `layoutFor` (ui/layout/breakpoints.ts) already answered
+   the height, and the shell wears the answer as a class. The lengths that
+   are not on the --sp scale are the board's own: 300 (the panel) and its
+   10/12 padding. */
+
+.shell--landscape {
+  --web-card-w: 300px;
+}
+
+/* the phone's own map controls: no zoom pill (there is none on a phone at
+   any width — pinch does the job, and 390 px of height has no room for a
+   88 px stack), so the locate button stands on the floor instead */
+.shell.shell--landscape .maplibregl-ctrl-top-right {
+  display: none;
+}
+
+.shell--landscape .web-controls {
+  bottom: var(--sp-4);
+  /* A phone on its side puts the notch down one of the LONG edges, and iOS
+     reports it as safe-area-inset-left or -right depending on which way it
+     was turned. Chromium never reports one, so this is by inspection (S5
+     review F11): the fallback keeps every other device exactly where it
+     was, and the inset only ever adds. */
+  right: calc(var(--sp-4) + env(safe-area-inset-right, 0px));
+}
+
+/* the layers button, where the map still has a corner for it (Home, W0, the
+   place and pin cards): top right, level with the panel's first row rather
+   than 12 px under a search bar that is now inside the panel */
+.shell--landscape .shell-layers--float,
+.shell--landscape .shell-layers--float[data-under="pill"] {
+  top: var(--sp-4);
+  right: calc(var(--sp-4) + env(safe-area-inset-right, 0px));
+}
+
+/* --- the panel ----------------------------------------------------------- */
+.shell--landscape .web-card {
+  left: 0;
+  top: 0;
+  height: 100dvh;
+  max-height: none;
+  border-radius: 0;
+  box-shadow: var(--sh-panel);
+  /* the board's 10/12, plus whatever the notch takes off the left edge on
+     the rotation that puts it there (F11) */
+  padding: 10px 12px 10px calc(12px + env(safe-area-inset-left, 0px));
+  gap: 6px;
+}
+
+/* ...less the rail, when there is one under it */
+.shell--landscape[data-rail="true"] .web-card {
+  height: calc(100dvh - var(--sz-tabbar));
+}
+
+/* ...and floor to ceiling ONLY where there is something to fill it with.
+   The panel is full height for a trip: the results, the alternatives and
+   the buttons are what the 390 px column is for, and the scroller below
+   depends on it. On the roots — Home, a place card, a dropped pin, W0,
+   search, Settings — there is no `.kit-sheet--inline`, and hard-coding the
+   height there shipped 276 px of white under a 48 px search field with the
+   map hidden behind it (S5 review F4). So on those the panel is what the
+   tablet card already is: content-height, capped, with the map showing
+   under it. The rail does not move — it is anchored to the viewport's floor
+   at the foot of the same 300 px column, which is where the board draws it
+   and where the reader's thumb already is. */
+.shell--landscape .web-card:not(:has(> .kit-sheet--inline)) {
+  height: auto;
+  max-height: 100dvh;
+}
+
+.shell--landscape[data-rail="true"] .web-card:not(:has(> .kit-sheet--inline)) {
+  max-height: calc(100dvh - var(--sz-tabbar));
+}
+
+/* R4's A→B block is the first thing in the panel, not the third: the head
+   the desktop keeps above it (CR-03 Q1) is not drawn here, and a hairline
+   under nothing is a rule the reader has to explain to themselves. */
+.shell--landscape .web-card[data-tab="route"] > .shell-top--header {
+  order: 1;
+  border-top: 0;
+  padding-top: 0;
+}
+
+/* The header's 30 px Layers chip (CR-03 Q2). The web hides it because it has
+   a 44 px button on the map on EVERY screen; landscape does not — R4 and W1
+   own the panel's top and the map's corner is 300 px away — so the chip is
+   the control here, exactly as on an upright phone. */
+.shell--landscape .web-card .shell-layers--chip {
+  display: flex;
+}
+
+/* Wander's four chips scroll rather than wrap here: wrapping costs a second
+   36 px row out of 390, and the board draws them running off the panel's
+   edge with the fade over them. This puts back what `.web-card` took away —
+   `.chip-row--over` (kit/ChipRow.tsx measures the overflow) draws the fade. */
+.shell--landscape .web-card .route-chips--wander {
+  overflow-x: auto;
+  flex-wrap: nowrap;
+  padding: 6px 4px;
+  margin: -6px -4px;
+}
+
+/* --- the results, and the buttons under them ----------------------------- */
+/* The panel is floor to ceiling, so the sheet inside it is the thing that
+   grows — the same rule the desktop panel has had since Task 15, with one
+   addition: `min-height: 0` and its own scroller, because here the content
+   really does outgrow the box (a card, two alternatives and two buttons in
+   390 px minus the header block). */
+.shell--landscape .web-card > .kit-sheet--inline {
+  flex: 1 1 auto;
+  min-height: 0;
+  /* 390 px of height runs its own scale — the panel's 6 px gap and its
+     10/12 padding, not the 14 the upright surfaces share (panel rhythm) */
+  gap: 6px;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.shell--landscape .web-card > .kit-sheet--inline::-webkit-scrollbar {
+  display: none;
+}
+
+/* ...and Start rides at the foot of that scroller rather than under the last
+   card: `sticky` rather than a second flex box, so the cards scroll UNDER it
+   and it is still in the tab order where the reader left it. The background
+   is the panel's own — a transparent sticky row would have the cards
+   travelling through the buttons. */
+.shell--landscape .web-card > .kit-sheet--inline > .kit-actions:last-child {
+  margin-top: auto;
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  background: var(--c-card);
+  padding-top: 6px;
+}
+
+/* --- the tab bar, re-laid as a rail under the panel ---------------------- */
+/* Three items in a row inside 300 px — the same `TabBar`, the same 56 px
+   (--sz-tabbar), and the same 200 ms slide out on the screens that do not
+   want it (ui/tabBar.ts decides which, and answers landscape identically:
+   nothing while a trip exists, the roots otherwise). */
+.shell-rail {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: var(--web-card-w);
+  /* the first tab's hit area starts where the notch stops (F11) */
+  padding-left: env(safe-area-inset-left, 0px);
+  box-sizing: border-box;
+  z-index: 22;
+  box-shadow: var(--sh-panel);
+  transition: transform var(--m-tabbar), visibility var(--m-tabbar);
+}
+
+.shell--landscape[data-rail="false"] .shell-rail {
+  transform: translateY(100%);
+  visibility: hidden;
+}
+
+/* --- the modal sheets ---------------------------------------------------- */
+/* They stay what they are on every other web surface — a centred dialog, or
+   the second card beside the panel — with the two ceilings a 390 px viewport
+   needs. Anything taller than that scrolls inside itself, which is what the
+   leave-at sheet's daylight bars do in June. */
+.shell--landscape .kit-sheet--dialog {
+  max-height: calc(100dvh - var(--sp-5));
+  padding: var(--sp-3) var(--sp-4);
+}
+
+/* the second card follows the panel to x=0, and never past the right edge:
+   667 × 375 (an iPhone SE on its side) has 367 px to give it, not 428 */
+.shell--landscape .kit-sheet--side {
+  left: calc(var(--web-card-w) + var(--sp-3));
+  top: var(--sp-3);
+  width: min(340px, calc(100vw - var(--web-card-w) - var(--sp-6)));
+  max-height: calc(100dvh - var(--sp-6));
+}
+
+/* ---- a11y: one focus ring, 44 px targets, reduced motion (2026-09-06, Task 16) ---- */
+/* Every ring in the app is drawn HERE, by one rule set, so a control cannot
+   ship without one by being written in a section that forgot.
+   ONE ring, everywhere: a 1 px halo the colour of the card the control sits
+   on, then 2 px of accent — `0 0 0 1px var(--c-focusHalo), 0 0 0 3px
+   var(--c-focus)` (CR-04 ruling 4, SPEC §4 Buttons). It was a 2 px `outline`
+   at a 2 px offset until 2026-09-10, which is invisible on an accent-filled
+   control: the ring is the accent, so Start's ring sat on Start's own green
+   with two pixels of card between them and read as a fatter button. The halo
+   is what separates the two, and it is drawn INSIDE the ring rather than
+   outside it, so the whole affordance still costs 3 px.
+   `--sh-ring` carries it so that the handful of controls whose SHAPE is a
+   shadow can compose the two instead of choosing (a chip's edge IS
+   `--sh-chip`; setting `box-shadow` on `:focus-visible` alone would take it
+   away exactly while the keyboard is on it). Those are the block below —
+   they add, never replace.
+   Two `outline: none` survive elsewhere and are deliberate: .kit-search-input
+   (replaced by its :focus-visible rule below) and .kit-sheet:focus, the modal
+   panel that takes focus on open and is not itself actionable. */
+
+.kit-btn:focus-visible,
+.day-scrub-play:focus-visible,
+.day-scrub-now:focus-visible,
+.kit-chip:focus-visible,
+.kit-row-main:focus-visible,
+.kit-toggle:focus-visible,
+.kit-segment-item:focus-visible,
+.kit-tab:focus-visible,
+.kit-hour:focus-visible,
+button.kit-card:focus-visible,
+.kit-delta:focus-visible,
+.kit-search-glyph:focus-visible,
+.kit-search-value:focus-visible,
+.kit-search--button:focus-visible,
+.kit-search-input:focus-visible,
+.shell-locate:focus-visible,
+.shell-layers:focus-visible,
+.shell-link:focus-visible,
+.kit-sheet-handle:focus-visible,
+.route-eta-recenter:focus-visible,
+.route-header-close:focus-visible,
+.route-header-field:focus-visible,
+.route-header-swap:focus-visible,
+.route-slider:focus-visible,
+.day-scrub-range:focus-visible,
+.dur-tile:focus-visible,
+.dur-backrow:focus-visible,
+.set-report:focus-visible,
+.set-textarea:focus-visible,
+.web-city:focus-visible,
+.maplibregl-canvas:focus-visible,
+.maplibregl-ctrl button:focus-visible,
+.maplibregl-ctrl-attrib-button:focus-visible {
+  outline: none;
+  --sh-ring: 0 0 0 1px var(--c-focusHalo), 0 0 0 3px var(--c-focus);
+  box-shadow: var(--sh-ring);
+}
+
+/* --- ...and the ONE control that wants no ring on a tap (item 10) -------- */
+/* "Search field has now a green border on click; should be just no border,
+   like Google Maps." (Viktor, phone round 3.) `:focus-visible` deliberately
+   DOES match a pointer click on a text field — every engine rings a caret,
+   because a caret with no ring is hard to find — which is right for a form
+   and wrong for a 52 px floating pill the reader has just touched: the
+   pill's own shape is the affordance, and the ring read as an error state.
+   So the ring here is keyboard-only, and `body[data-kbd]` is what tells the
+   two apart (ui/focusSource.ts — the `:focus-visible:not(:hover)` trick is
+   not reliable: touch leaves a sticky hover, a stylus leaves none).
+   The pill keeps its float shadow; the two controls INSIDE it have none of
+   their own and go back to nothing. Forced colours are untouched — the
+   outline below is the indicator there, and it is drawn for every source.
+   Three selectors, and only three: everything else in the app is a button,
+   which no browser rings on a tap in the first place. */
+body:not([data-kbd]) .kit-search--button:focus-visible {
+  box-shadow: var(--sh-float);
+}
+
+body:not([data-kbd]) .kit-search-value:focus-visible,
+body:not([data-kbd]) .kit-search-input:focus-visible {
+  box-shadow: none;
+}
+
+/* --- ...and the controls whose shape is a shadow, which ADD it ----------- */
+/* Each of these paints its own edge with `box-shadow`, so the rule above
+   would erase that edge to draw the ring. They re-declare both, in the same
+   order the control does, with `--sh-ring` on the end. The list is short and
+   it is exhaustive: src/a11y.test.ts holds every focusable selector that
+   carries a `box-shadow` of its own to appearing here. */
+.kit-search--button:focus-visible,
+.shell-locate:focus-visible,
+.shell-layers:focus-visible {
+  box-shadow: var(--sh-float), var(--sh-ring);
+}
+
+/* after .shell-layers: the 30 px chip is both, and wears the chip shadow */
+.kit-chip:focus-visible,
+.kit-segment-item[aria-checked="true"]:focus-visible,
+.shell-layers--chip:focus-visible {
+  box-shadow: var(--sh-chip), var(--sh-ring);
+}
+
+/* a dark chip's hairline is its edge (see :root[data-theme="dark"] .kit-chip) */
+:root[data-theme="dark"] .kit-chip:focus-visible {
+  box-shadow: var(--sh-chip), 0 0 0 1px var(--c-hair2), var(--sh-ring);
+}
+
+/* ...and the three that deliberately have NO shadow, at a specificity that
+   clears the rules taking it away: the report sheet's type chips in both
+   themes (they sit ON a card and the ink fill is their whole difference),
+   and the web card's search pill, which the card's own edge replaces. */
+.set-chips .kit-chip:focus-visible,
+:root[data-theme="dark"] .set-chips .kit-chip:focus-visible,
+.web-card .kit-search--button:focus-visible {
+  box-shadow: var(--sh-ring);
+}
+
+/* --- ...and the two places a box-shadow cannot reach --------------------- */
+
+/* 1. maplibre's own control buttons, which ship a blue ring of their own.
+   maplibre-gl.css gives `.maplibregl-ctrl-attrib-button:focus` and
+   `.maplibregl-ctrl-group button:focus` a 2 px #0096ff box-shadow, and
+   repeats it for a `:focus:focus-visible` twin. The first TIES our (0,2,0)
+   attribution selector and lands later in the bundle; the second, at
+   (0,3,1), BEATS our (0,2,1) `.maplibregl-ctrl button` outright — so the
+   attribution toggle and both zoom buttons wore maplibre's #0096ff instead
+   of this app's ring (CR-04 review H2). The 2 px outline never collided,
+   because maplibre draws with a shadow; moving the ring INTO a shadow put
+   the two in one cascade.
+   The answer is one more CLASS apiece, which is the same answer the credit
+   pill's own block gives four hundred lines up: `.shell` takes the
+   attribution selector to (0,3,0), and the group's second class takes the
+   zoom buttons to (0,4,1), one past maplibre's (0,3,1). Weight, not order —
+   maplibre-gl.css is imported from components/MapView.tsx and may land
+   either side of this file. (Doubling `:focus-visible` looks like it would
+   do the same and does not: two pseudo-classes plus one class is (0,3,1),
+   which TIES the rule it was meant to beat. Measured, not counted.)
+   --sh-ring is already set on these elements by the rule above, which
+   maplibre has no declaration to take it away with; `outline: none` comes
+   from there too, and is deliberately NOT repeated here, so that the
+   forced-colours block below still outranks it. */
+.shell .maplibregl-ctrl-attrib-button:focus-visible,
+.shell .maplibregl-ctrl.maplibregl-ctrl-group button:focus-visible {
+  box-shadow: var(--sh-ring);
+}
+
+/* 2. forced colours, which drop `box-shadow` outright. Windows' high
+   contrast themes (and any `forced-colors: active` UA) replace the page's
+   palette with the reader's own and throw every box-shadow away — so from
+   2026-09-10, when the ring became a shadow, NO control in the app had a
+   focus indicator there at all (CR-04 review H1, a WCAG 2.4.7 regression:
+   the outline it replaced was preserved, forced to Highlight). `outline`
+   is the one focus affordance forced colours keeps, so it comes back here,
+   for exactly the selector list the ring rule draws — src/css.test.ts holds
+   the two lists identical, so a control added to one is added to both. Two
+   px of Highlight at a 2 px offset is the shape the ring had before the
+   halo, which is the shape forced colours can express: there is no card
+   colour to separate the ring from, because the reader's Canvas is already
+   the only background. */
+@media (forced-colors: active) {
+  .kit-btn:focus-visible,
+  .day-scrub-play:focus-visible,
+  .day-scrub-now:focus-visible,
+  .kit-chip:focus-visible,
+  .kit-row-main:focus-visible,
+  .kit-toggle:focus-visible,
+  .kit-segment-item:focus-visible,
+  .kit-tab:focus-visible,
+  .kit-hour:focus-visible,
+  button.kit-card:focus-visible,
+  .kit-delta:focus-visible,
+  .kit-search-glyph:focus-visible,
+  .kit-search-value:focus-visible,
+  .kit-search--button:focus-visible,
+  .kit-search-input:focus-visible,
+  .shell-locate:focus-visible,
+  .shell-layers:focus-visible,
+  .shell-link:focus-visible,
+  .kit-sheet-handle:focus-visible,
+  .route-eta-recenter:focus-visible,
+  .route-header-close:focus-visible,
+  .route-header-field:focus-visible,
+  .route-header-swap:focus-visible,
+  .route-slider:focus-visible,
+  .day-scrub-range:focus-visible,
+  .dur-tile:focus-visible,
+  .dur-backrow:focus-visible,
+  .set-report:focus-visible,
+  .set-textarea:focus-visible,
+  .web-city:focus-visible,
+  .maplibregl-canvas:focus-visible,
+  .maplibregl-ctrl button:focus-visible,
+  .maplibregl-ctrl-attrib-button:focus-visible {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
+  }
+
+  /* ...and the three controls whose STATE is a fill. Forced colours repaint
+     every background with the reader's Canvas, which makes a toggle that is
+     on identical to one that is off, the picked report chip identical to
+     the other three, and the accent tab identical to its neighbours — the
+     ring is not the only thing a shadow-and-fill design loses. Each of
+     these keeps the app's own colours instead, which is what
+     `forced-color-adjust: none` is for (it inherits, so the toggle's knob
+     and the tab bar's labels come with their parents). The outline above is
+     unaffected: `Highlight` is a system colour and resolves either way. */
+  .kit-toggle,
+  .set-chips .kit-chip,
+  .kit-tabbar {
+    forced-color-adjust: none;
+  }
+}
+
+/* --- 44 px hit targets --------------------------------------------------- */
+/* The mockups draw chips at 36, the toggle at 26 and the tab labels shorter
+   still; a settings row is 52 px tall but the button inside it is only as
+   tall as its two lines of text (22). Rather than redraw any of them, a
+   transparent ::before grows the HIT area to --sz-target in both axes
+   without moving one pixel of paint (WCAG 2.5.5). `max(100%, …)` means a
+   control already big enough is left exactly as it is, and 44 inside a 52 px
+   row still leaves 8 px between one row's target and the next.
+   Two documented exceptions, both in the report: the hour bars (a contiguous
+   series, 28 wide on a 34 px pitch, so widening one to 44 would
+   overlap its neighbours by 10 px a side and make the strip harder to hit,
+   not easier) and maplibre's own attribution toggle, which is the library's
+   24 px summary element. */
+/* .kit-toggle is absent on purpose: it already declares position: relative
+   at its own rule, for the knob. .shell-layers--chip joined the list with
+   CR-04 r2: it is an ordinary flex child of the header row now, where it
+   used to be pinned over the row and was therefore already a containing
+   block of its own (CR-03 Q2). */
+.kit-chip,
+.kit-segment-item,
+.kit-tab,
+.kit-btn--small,
+.kit-btn--smallSecondary,
+.kit-search-glyph,
+.kit-search-value,
+.kit-row-main,
+.route-header-close,
+.route-header-field,
+.route-header-swap,
+.set-request,
+.wander-head-clear,
+.wander-idle-dur,
+.day-scrub-play,
+.day-scrub-now,
+.shell-layers--chip,
+.web-city {
+  position: relative;
+}
+
+.kit-chip::before,
+.kit-segment-item::before,
+.kit-toggle::before,
+.kit-tab::before,
+.kit-btn--small::before,
+.kit-btn--smallSecondary::before,
+.kit-search-glyph::before,
+.kit-search-value::before,
+.kit-row-main::before,
+.set-request::before,
+.wander-head-clear::before,
+.wander-idle-dur::before,
+.day-scrub-play::before,
+.day-scrub-now::before,
+/* the 30 px Layers chip (CR-03 Q2) — the 44 px button needs no slop, its
+   smaller twin does. The block right after this one caps how far it may
+   grow. */
+.shell-layers--chip::before,
+.web-city::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: max(100%, var(--sz-target));
+  height: max(100%, var(--sz-target));
+  transform: translate(-50%, -50%);
+}
+
+/* ...with one cap, and it is the same kind as the R4 header's below. The
+   Layers chip now sits 6 px from the end of the scrolling chip row, so a
+   44 px slop centred on a 30 px circle would still reach 7 px back — one
+   pixel past the gap and onto the scroller, where the last chip comes to
+   rest at full scroll. One pixel is the whole class of bug CR-04 ruling 2
+   removes (S3 review, finding 1: at 360 px in German a tap on the access
+   chip opened the layers sheet), so the cap outlives the pinning that first
+   made it necessary.
+   The slop may only grow AWAY from the row: from the circle's own left edge
+   out into the header's 12 px right padding. 37 x 44 is what is left, and it
+   clears WCAG 2.5.8's 24 px with room. Listed in
+   e2e/a11y-motion.spec.ts's EXEMPT beside the header's four. */
+.shell-layers--chip::before {
+  left: 0;
+  right: -7px;
+  width: auto;
+  transform: translateY(-50%);
+}
+
+/* The R4 header is the one place 44 px in BOTH axes cannot be had: SPEC §4
+   draws four controls — two 36 px fields 3 px apart, and the ✕ / ⇅ in a
+   24 px column beside them — inside a 127 px panel. Grown to 44 the two
+   fields' hit areas would overlap by 5 px, and the To field would take the
+   bottom edge of the From field: a bigger number, a worse target
+   (slice-1 review B8).
+   So they are capped at the largest size that leaves NO overlap: 39 = the
+   36 px field plus the 3 px gap, which makes the two slops exactly tangent,
+   and 32 wide × 36 for the column, which is the size SPEC §4 asks for. Both
+   clear WCAG 2.5.8 (24 px) with room; 2.5.5's 44 is AAA and unreachable
+   here without making the screen harder to use. e2e/a11y-motion.spec.ts
+   measures the cap and the absence of overlap. */
+.route-header-field::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: max(100%, var(--sz-target));
+  height: max(100%, 39px);
+  transform: translate(-50%, -50%);
+}
+
+.route-header-close::before,
+.route-header-swap::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: max(100%, 32px);
+  height: max(100%, var(--sz-abField));
+  transform: translate(-50%, -50%);
+}
+
+/* --- reduced motion ------------------------------------------------------ */
+/* Everything in the app that moves: the phone sheet's slide, the web
+   dialog's fade, the scrim, the bar and hour-bar growth, the toggle knob,
+   the Computing shimmer and the GPS pulse. The map's own easeTo becomes a
+   jumpTo for the same reader — matchMedia, in components/MapView.tsx.
+   (The debug page's own transitions are already inside a
+   `prefers-reduced-motion: no-preference` query and never start.) */
+@media (prefers-reduced-motion: reduce) {
+  .shell-tabbar,
+  /* the same bar, re-laid as the landscape rail (CR-03 Q4) */
+  .shell-rail,
+  .kit-sheet,
+  /* the peek sheet's own rule (its `bottom` follows the bar) outranks
+     `.kit-sheet` at equal-or-lower specificity, so it is named here too */
+  .kit-sheet--tabbar[data-snap="peek"],
+  .kit-sheet--dialog,
+  .kit-scrim,
+  .kit-bar-fill,
+  .kit-hour-fill,
+  .kit-toggle,
+  .kit-toggle-knob {
+    transition: none;
+  }
+
+  .kit-skeleton--shimmer {
+    animation: none;
+    background: var(--c-hair);
+  }
+
+  .gps-dot::before {
+    animation: none;
+  }
+}
+
+/* ---- qa fix A ---- */
+/* Search states (QA F2-02/04/05): the loading row, the "nothing matched"
+   line and the failure line with its Retry, all under the results list and
+   above the permanent outside-note. */
+.shell-state {
+  margin: 0;
+  padding: var(--sp-3) 0;
+  font-size: var(--fs-caption);
+  color: var(--c-muted);
+}
+
+.shell-state--error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  color: var(--c-end);
+  font-weight: var(--fw-semibold);
+}
+
+/* The whole-app fallback (QA F6-01). It replaces the shell, so it owns the
+   viewport: centred, on the page ground, nothing else on screen. */
+.crash {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-4);
+  padding: var(--sp-5);
+  background: var(--c-page);
+  color: var(--c-ink);
+  font-family: var(--font-ui);
+  text-align: center;
+}
+
+.crash-text {
+  margin: 0;
+  max-width: 28ch;
+  font-size: var(--fs-row);
+}
+
+/* .kit-btn is built to fill a sheet's action row (flex: 1 1 0; width: 100%).
+   Neither of these two is in one, so both take their own size back. */
+.shell-state--error .kit-btn,
+.crash .kit-btn {
+  flex: 0 0 auto;
+  width: auto;
+}
+
+.crash .kit-btn {
+  min-width: 180px;
+}
+
+/* ---- R4 header (compact rework, 2026-09-06) ---- */
+/* The routes screen's Google-Maps-style header (board HB-routes.html,
+   SPEC §3 R4 / §4): one white full-bleed panel holding two stacked editable
+   From / To fields joined by a dotted connector, a 24 px trailing column with
+   the ✕ that leaves and the ⇅ that turns the walk around, and the three
+   chips. There is no back arrow — the ✕ is the way out, and dropping the
+   arrow is what buys the fields the width to be 36 px tall and still read.
+
+   The panel is 127 px tall in a browser tab and 171 installed, which is
+   8 + 36 + 3 + 36 + 6 + 30 + 8 over `env(safe-area-inset-top)`. Every one of
+   those lengths is a token except the 3 px field gap and the connector's
+   19/33/9 — the board's own measurements, and already on this file's list.
+   The map fit clears the panel (ui/mapFit.ts). */
+
+/* The routes header is full-bleed: it is the top of the phone, not a pill
+   floating on the map like every other .shell-top. */
+.shell-top--header {
+  top: 0;
+  left: 0;
+  right: 0;
+}
+
+/* --sp-2 of top padding over the safe area, NOT the --sp-3 the floating
+   chrome uses: the panel is the top of the phone rather than a box hanging
+   below it, and 8 is what makes the published 127 / 171 come out (SPEC §4,
+   "padding 8 12 8 (browser)"). */
+.route-header {
+  background: var(--c-card);
+  border-radius: 0;
+  box-shadow: var(--sh-float);
+  padding: calc(env(safe-area-inset-top, 0px) + var(--sp-2)) var(--sp-3) var(--sp-2);
+  display: flex;
+  flex-direction: column;
+  /* 6, not --sp-2: the board's own measurement, and the 2 px that separate
+     127 from 129 (measured against HB-routes) */
+  gap: 6px;
+}
+
+.route-header-row {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+}
+
+/* --- the two fields ------------------------------------------------------ */
+.route-header-fields {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  position: relative;
+}
+
+/* The dotted run between the two glyphs — decoration, never read out. It
+   spans the 3 px gap plus 3 px into each field, centred on x = 20 (the
+   field's 12 px of padding plus half the 16 px glyph slot), which is where
+   both glyphs sit.
+   z-index, because the fields are `position: relative` (the hit-slop block
+   above makes them so) and come after it in the DOM: without it their
+   --c-well background covers the 3 px the run reaches into each of them and
+   only the 3 px in the gap survives (review B-2). */
+.route-header-link {
+  position: absolute;
+  z-index: 1;
+  left: 19px;
+  top: 33px;
+  height: 9px;
+  border-left: 2px dotted var(--c-muted);
+}
+
+.route-header-field {
+  height: var(--sz-abField);
+  border: 0;
+  border-radius: var(--r-field);
+  background: var(--c-well);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 var(--sp-3);
+  font-family: var(--font-ui);
+  font-size: var(--fs-body);
+  font-weight: var(--fw-semibold);
+  color: var(--c-ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.route-header-value {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A fixed 16×16 box, so the 10 px dot and the 11 px teardrop centre on the
+   same x however big each glyph is (SPEC §4). */
+.route-header-slot {
+  width: var(--sp-4);
+  height: var(--sp-4);
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* The start is the map's own blue: a live fix wears the GPS dot, a pinned
+   start the same blue as a teardrop — it is a place, not a fix. The
+   destination is the ink teardrop the map draws at the far end. */
+.route-header-glyph {
+  box-sizing: border-box;
+  display: block;
+  width: 10px;
+  height: 10px;
+}
+
+.route-header-glyph--gps {
+  border-radius: 50%;
+  background: var(--c-route);
+  border: 2px solid var(--c-card);
+  box-shadow: 0 0 0 1.5px var(--c-route);
+}
+
+.route-header-glyph--start,
+.route-header-glyph--dest {
+  width: 11px;
+  height: 11px;
+  border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg);
+}
+
+.route-header-glyph--start {
+  background: var(--c-route);
+}
+
+.route-header-glyph--dest {
+  background: var(--c-ink);
+}
+
+/* --- the trailing column: ✕ beside From, ⇅ beside To ------------------- */
+/* 24 px wide, 2 px off the fields and bleeding 4 px into the panel's right
+   padding (SPEC §4) — the glyphs are punctuation, and hanging them slightly
+   into the margin is what keeps the fields as wide as the board draws them. */
+.route-header-col {
+  width: var(--sp-6);
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-right: -4px;
+}
+
+.route-header-close,
+.route-header-swap {
+  height: var(--sz-abField);
+  border: 0;
+  padding: 0;
+  background: none;
+  font-family: var(--font-ui);
+  line-height: var(--lh-tight);
+  color: var(--c-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.route-header-close {
+  font-size: var(--sz-closeGlyph);
+}
+
+/* the one glyph SPEC §4 draws bigger than any type token: 19 against
+   --fs-button's 17. It is an arrow, not text, so it is sized in the
+   generator's checked SIZES table rather than invented here. */
+.route-header-swap {
+  font-size: var(--sz-swapGlyph);
+}
+
+.route-header-swap:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+/* --- the chips, on the same panel ---------------------------------------- */
+/* Wander's chips still float over its map; the routes screen's sit in the
+   header, flush with the fields above them (there is no back column to
+   indent past any more). 30 px rather than the map chips' 36 — the row has
+   to fit three of them and a header height that was published. */
+/* The R4 header's three chips. In English they fit the 366 px inside the
+   panel with room over; in German they are "Abfahrt 14:00 ▾ · Schatten
+   zuerst ▾ · Kinderwagen ▾" — 414 px, and the third ran 36 px off the right
+   edge of the phone (slice 9's DE pass). The answer is Wander's: the row is
+   a .chip-row and scrolls sideways rather than wrapping, because wrapping
+   would put a fourth line in a panel whose 127 px height is published
+   (SPEC §3 R4) and take it out of the map's band. Nothing moves in English —
+   a row with nothing to scroll does not scroll. Only the panel's own
+   geometry is left here: the row is a block in the header, not a box
+   floating over the map. */
+.route-chips--header {
+  position: static;
+  inset: auto;
+  align-items: center;
+}
+
+.route-chips--header .kit-chip {
+  height: var(--sz-chipHeader);
+  /* the row scrolls, so a chip must keep its own width rather than being
+     squeezed by flex to make three German labels fit (slice 9) */
+  flex: none;
+}
+
+/* ...and their hit slop must not grow up into the To field's. The shared
+   rule takes every chip to 44, which on a 30 px chip 6 px under an 83 px
+   field reaches 82 — 2.5 px inside the field's slop, and the chip wins on
+   DOM order, so a tap on the bottom of the To field opened the Leave-at
+   sheet (review B-1). 36 is the largest height that clears it: centred on
+   104 it runs 86–122, and the field's stops at 84.5. Width is untouched —
+   the chips are wider than 44 already. */
+.route-chips--header .kit-chip::before {
+  height: max(100%, var(--sz-abField));
+}
+
+/* --- web: the same two fields, inside the card or panel ------------------ */
+/* The card IS the white panel and brings its own padding, so the header
+   keeps only its rows (board W-routes).  */
+.web-card .route-header {
+  padding: 0;
+  background: none;
+  box-shadow: none;
+}
